@@ -9,7 +9,10 @@
     "hyring-mcp-dynamic": "dist/bin/dynamic.js",
     "hyring-mcp-coding": "dist/bin/coding.js",
     "hyring-mcp-verbal": "dist/bin/verbal.js",
-    "hyring-mcp-results": "dist/bin/results.js"
+    "hyring-mcp-results": "dist/bin/results.js",
+    "hyring-mcp-phone": "dist/bin/phone.js",
+    "hyring-mcp-resume": "dist/bin/resume.js",
+    "hyring-mcp-vip": "dist/bin/vip.js"
   },
   "scripts": {
     "build": "tsc",
@@ -24,7 +27,13 @@
     "dev:dynamic": "ts-node src/bin/dynamic.ts",
     "dev:coding": "ts-node src/bin/coding.ts",
     "dev:verbal": "ts-node src/bin/verbal.ts",
-    "dev:results": "ts-node src/bin/results.ts"
+    "dev:results": "ts-node src/bin/results.ts",
+    "dev:phone": "ts-node src/bin/phone.ts",
+    "dev:resume": "ts-node src/bin/resume.ts",
+    "dev:vip": "ts-node src/bin/vip.ts",
+    "start:phone": "node dist/bin/phone.js",
+    "start:resume": "node dist/bin/resume.js",
+    "start:vip": "node dist/bin/vip.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",

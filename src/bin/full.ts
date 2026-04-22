@@ -6,6 +6,9 @@ import { registerFixedBuildTools } from "../tools/build/fixed.tools";
 import { registerDynamicBuildTools } from "../tools/build/dynamic.tools";
 import { registerCodingBuildTools } from "../tools/build/coding.tools";
 import { registerVerbalBuildTools } from "../tools/build/verbal.tools";
+import { registerPhoneBuildTools } from "../tools/build/phone.tools";
+import { registerResumeBuildTools } from "../tools/build/resume.tools";
+import { registerVipBuildTools } from "../tools/build/vip.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
 import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
 import { registerCandidateReviewTools } from "../tools/candidate.review.tools";
@@ -26,6 +29,9 @@ async function main() {
   registerDynamicBuildTools(server);
   registerCodingBuildTools(server);
   registerVerbalBuildTools(server);
+  registerPhoneBuildTools(server);
+  registerResumeBuildTools(server);
+  registerVipBuildTools(server);
   registerSharedBuildTools(server);
 
   registerCandidateInviteTools(server);

@@ -64,3 +64,24 @@ export function isTokenExpired(token: string): boolean {
 export function getCredentialsPath(): string {
   return CREDENTIALS_FILE;
 }
+
+/**
+ * Decodes the JWT payload and returns the employer ID directly from the token.
+ * Avoids an extra API round-trip for servers that embed employerId in the token.
+ */
+export function getEmployerIdFromToken(): number {
+  const creds = loadCredentials();
+  if (!creds?.token) throw new Error("Not logged in.");
+  try {
+    const parts = creds.token.split(".");
+    if (parts.length !== 3) throw new Error("Invalid token format.");
+    const payload = JSON.parse(
+      Buffer.from(parts[1], "base64url").toString("utf-8"),
+    );
+    const employerId = payload.employerId ?? payload.id;
+    if (!employerId) throw new Error("employerId not found in token payload.");
+    return employerId as number;
+  } catch {
+    throw new Error("Could not decode employer ID from token.");
+  }
+}

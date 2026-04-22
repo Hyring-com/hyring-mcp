@@ -35,7 +35,7 @@ Assessment constraint (flexi only):
     {
       assessmentId: z.string().describe("Assessment UUID"),
       interviewType: z
-        .enum(["fixed", "dynamic", "coding", "verbal"])
+        .enum(["fixed", "dynamic", "coding", "verbal", "phone", "resume"])
         .optional()
         .describe(
           "Interview type — used to set correct fitScoreWeightAge and interviewTime defaults",
@@ -170,6 +170,8 @@ Assessment constraint (flexi only):
         const isSchedule = availability === "schedule";
         const isCoding = interviewType === "coding";
         const isFixed = interviewType === "fixed";
+        const isPhone = interviewType === "phone";
+        const isResume = interviewType === "resume";
 
         // fitScoreWeightAge is type-specific
         const fitScoreWeightAge = isCoding
@@ -181,6 +183,10 @@ Assessment constraint (flexi only):
         if (!resolvedInterviewTime) {
           if (interviewType === "verbal") {
             resolvedInterviewTime = 240;
+          } else if (isPhone) {
+            resolvedInterviewTime = 300;
+          } else if (isResume) {
+            resolvedInterviewTime = 600;
           } else if (isFixed) {
             try {
               const qRes = await screenerClient.get(

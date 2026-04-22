@@ -1,10 +1,9 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
 import { loadCredentials, isTokenExpired } from "../auth/credentials";
-
-const BASE_URL = process.env.SCREENER_API ?? "https://api-screener.hyring.com/api/v1";
+import { getDomain } from "./get-domain";
 
 export const screenerClient: AxiosInstance = axios.create({
-  baseURL: BASE_URL,
+  baseURL: getDomain().screenerApi,
   timeout: 15000,
   headers: { "Content-Type": "application/json" },
 });
