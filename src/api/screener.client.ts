@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
 import { loadCredentials, isTokenExpired } from "../auth/credentials";
 
-const BASE_URL = process.env.SCREENER_API ?? "http://localhost:5000/api/v1";
+const BASE_URL = process.env.SCREENER_API ?? "https://api-screener.hyring.com/api/v1";
 
 export const screenerClient: AxiosInstance = axios.create({
   baseURL: BASE_URL,
@@ -33,13 +33,13 @@ export function requireAuth(): void {
 
   if (!creds?.token) {
     throw new Error(
-      "Not logged in. Ask the user for their email address, then use request_otp to send a sign-in code."
+      "Not logged in. Ask the user for their email address, then use request_otp to send a sign-in code.",
     );
   }
 
   if (isTokenExpired(creds.token)) {
     throw new Error(
-      `Session expired (signed in as ${creds.email}). Ask the user for their email and use request_otp to sign in again.`
+      `Session expired (signed in as ${creds.email}). Ask the user for their email and use request_otp to sign in again.`,
     );
   }
 }

@@ -1,11 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { screenerClient, requireAuth, extractError, getEmployerIdFromAPI } from "../api/screener.client";
+import { screenerClient, extractError, getEmployerIdFromAPI } from "../api/screener.client";
+import { authedTool } from "../server";
 
-export function registerCandidateManageTools(server: McpServer) {
+export function registerCandidateReviewTools(server: McpServer) {
 
   // ── list_candidates ───────────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "list_candidates",
     "Lists candidates for an assessment filtered by status. Returns seekerIds needed for result tools.",
     {
@@ -17,8 +19,6 @@ export function registerCandidateManageTools(server: McpServer) {
     },
     async ({ assessmentId, status = "completed", skip = 0, take = 20 }) => {
       try {
-        requireAuth();
-
         // Backend routes confirmed: all use view/ prefix
         // Response tuple: [assessmentData, topFiveCandidate, filteredResponses, total_count, filtered_count, stageCountsData, metrics]
         // Candidates are at index [2], total_count at index [3]
@@ -78,88 +78,9 @@ export function registerCandidateManageTools(server: McpServer) {
     }
   );
 
-  // ── invite_candidate ──────────────────────────────────────────────────────────
-  server.tool(
-    "invite_candidate",
-    "Sends an interview invite to a single candidate for a specific assessment.",
-    {
-      name:         z.string().describe("Candidate's full name"),
-      email:        z.string().email().describe("Candidate's email address"),
-      assessmentId: z.string().describe("Assessment UUID"),
-      expiresAt:    z.string().optional().describe("ISO date when the invite expires, e.g. '2025-12-31'"),
-    },
-    async ({ name, email, assessmentId, expiresAt }) => {
-      try {
-        requireAuth();
-        const employerId = await getEmployerIdFromAPI();
-
-        const payload: any = {
-          name,
-          email,
-          assessmentRefId: assessmentId,
-          employerId,
-        };
-        if (expiresAt) payload.expiresAt = expiresAt;
-
-        const res = await screenerClient.post(`/employer/assessment/invite/${employerId}`, payload);
-        const status = res.data?.data?.status ?? res.data?.message ?? "sent";
-
-        return {
-          content: [{
-            type: "text" as const,
-            text: `Invite sent to ${name} (${email}) for assessment ${assessmentId}.\nStatus: ${status}`,
-          }],
-        };
-      } catch (err) {
-        return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
-      }
-    }
-  );
-
-  // ── bulk_invite ───────────────────────────────────────────────────────────────
-  server.tool(
-    "bulk_invite",
-    "Sends interview invites to multiple candidates at once.",
-    {
-      assessmentId: z.string().describe("Assessment UUID"),
-      candidates: z.array(z.object({
-        name:   z.string(),
-        email:  z.string().email(),
-        mobile: z.string().optional(),
-      })).describe("List of candidates to invite"),
-    },
-    async ({ assessmentId, candidates }) => {
-      try {
-        requireAuth();
-        const employerId = await getEmployerIdFromAPI();
-
-        const res = await screenerClient.post(`/employer/assessment/invite/bulk/${employerId}`, {
-          assessmentRefId: assessmentId,
-          employerId,
-          candidates: candidates.map((c) => ({
-            name:   c.name,
-            email:  c.email,
-            mobile: c.mobile ?? null,
-          })),
-        });
-
-        const failed: string[] = res.data?.data?.failed ?? [];
-        const sent = candidates.length - failed.length;
-
-        return {
-          content: [{
-            type: "text" as const,
-            text: `Bulk invite complete for assessment ${assessmentId}.\nSent: ${sent}/${candidates.length}\n${failed.length ? `Failed emails: ${failed.join(", ")}` : "All invites sent successfully."}`,
-          }],
-        };
-      } catch (err) {
-        return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
-      }
-    }
-  );
-
   // ── update_hiring_stage ───────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "update_hiring_stage",
     `Updates the hiring stage for a candidate after reviewing their interview result.
 
@@ -175,8 +96,6 @@ Stages:
     },
     async ({ resultId, stage, rejectReason, hideRejectReason }) => {
       try {
-        requireAuth();
-
         const payload: any = {
           id:     resultId,
           status: stage,
@@ -200,7 +119,8 @@ Stages:
   );
 
   // ── send_reminder ─────────────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "send_reminder",
     "Sends a reminder email to a candidate who has been invited but hasn't started the interview yet.",
     {
@@ -208,7 +128,6 @@ Stages:
     },
     async ({ inviteId }) => {
       try {
-        requireAuth();
         await screenerClient.patch(`/assessment/send-reminder/${inviteId}`);
         return {
           content: [{ type: "text" as const, text: `Reminder sent for invite ${inviteId}.` }],

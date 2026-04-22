@@ -1,11 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { screenerClient, requireAuth, extractError, getEmployerIdFromAPI } from "../api/screener.client";
+import { screenerClient, extractError, getEmployerIdFromAPI } from "../api/screener.client";
+import { authedTool } from "../server";
 
 export function registerAssessmentViewTools(server: McpServer) {
 
   // ── list_assessments ─────────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "list_assessments",
     "Lists all assessments for the authenticated employer. Returns assessment IDs needed for all other tools.",
     {
@@ -17,7 +19,6 @@ export function registerAssessmentViewTools(server: McpServer) {
     },
     async ({ status = "active", page = 1, take = 50, search }) => {
       try {
-        requireAuth();
         const employerId = await getEmployerIdFromAPI();
 
         const endpointMap: Record<string, string> = {
@@ -74,13 +75,13 @@ export function registerAssessmentViewTools(server: McpServer) {
   );
 
   // ── get_assessment ────────────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "get_assessment",
     "Returns full details of a specific assessment by its UUID.",
     { assessmentId: z.string().describe("Assessment UUID from list_assessments") },
     async ({ assessmentId }) => {
       try {
-        requireAuth();
         const res = await screenerClient.get(`/employer/assessment/job-details/${assessmentId}`);
         // Response: { data: [assessmentObj, planStatus, teamEmails, slack, hrVideos, oauth] }
         const raw = res.data?.data;
@@ -132,13 +133,13 @@ export function registerAssessmentViewTools(server: McpServer) {
   );
 
   // ── get_assessment_stats ──────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "get_assessment_stats",
     "Returns candidate counts for an assessment by status: attended, invited, started, declined, not qualified, retake, scheduled.",
     { assessmentId: z.string().describe("Assessment UUID") },
     async ({ assessmentId }) => {
       try {
-        requireAuth();
         // Confirmed from backend source:
         // /assessment/assessment-stats/:id  → returns [active, inactive, archived, draft] — assessment status counts, NOT candidate counts
         // /assessment/view/assessment-stats/:id → returns [attended, invited, started, declined, not_qualified, retake, scheduled]

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { screenerClient, requireAuth, extractError } from "../api/screener.client";
+import { screenerClient, extractError } from "../api/screener.client";
+import { authedTool } from "../server";
 
 // ── Score label helpers (match frontend communication-helper.js exactly) ──────
 
@@ -89,7 +90,8 @@ function normalizeEngScore(raw: number, totalAnswered: number): number {
 export function registerCandidateResultsTools(server: McpServer) {
 
   // ── list_attended_candidates ───────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "list_attended_candidates",
     `Lists candidates who have completed an assessment, with their scores and hiring stage.
 
@@ -101,8 +103,6 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
     },
     async ({ assessmentId, interviewType }) => {
       try {
-        requireAuth();
-
         let candidates: any[] = [];
 
         if (interviewType === "verbal") {
@@ -158,7 +158,8 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   );
 
   // ── get_fixed_report ───────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "get_fixed_report",
     "Returns the full report for a One-Way (fixed) interview candidate: fit score, technical & communication scores with labels, per-question breakdown with transcripts, AI summary, and candidate info.",
     {
@@ -168,8 +169,6 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
     },
     async ({ assessmentId, seekerId, batch }) => {
       try {
-        requireAuth();
-
         const res = await screenerClient.post("/assessment/result", {
           seekerId,
           assessmentId,
@@ -330,7 +329,8 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   );
 
   // ── get_dynamic_report ─────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "get_dynamic_report",
     "Returns the full report for a Two-Way (dynamic AI) interview candidate: fit score, technical & communication scores with labels, per-skill conversation Q&A with transcripts, AI summary.",
     {
@@ -340,8 +340,6 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
     },
     async ({ assessmentId, seekerId, batch }) => {
       try {
-        requireAuth();
-
         const res = await screenerClient.post("/seeker/dynamic-interview/context-result", {
           seekerId,
           assessmentId,
@@ -508,7 +506,8 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   );
 
   // ── get_coding_report ──────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "get_coding_report",
     "Returns the full report for a Coding interview candidate: fit score with label, code quality / problem solving / optimization breakdown, per-question results with labels.",
     {
@@ -518,8 +517,6 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
     },
     async ({ assessmentId, seekerId, batch }) => {
       try {
-        requireAuth();
-
         const res = await screenerClient.post("/assessment/result/coding", {
           seekerId,
           assessmentId,
@@ -645,7 +642,8 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   );
 
   // ── get_verbal_report ──────────────────────────────────────────────────────
-  server.tool(
+  authedTool(
+    server,
     "get_verbal_report",
     `Returns the full report for a Verbal/EPT (English Proficiency Test) candidate: CEFR level, language breakdown with labels, accent, AI summary, per-topic word detections.
 
@@ -657,8 +655,6 @@ batch is the attempt number (1 = first attempt).`,
     },
     async ({ statusId, batch }) => {
       try {
-        requireAuth();
-
         const res = await screenerClient.get(`/language-screener/status/${statusId}/${batch ?? 1}`);
 
         // Response shape: { data: englishReportData }
