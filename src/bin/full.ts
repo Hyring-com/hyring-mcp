@@ -13,6 +13,9 @@ import { registerSharedBuildTools } from "../tools/build/shared.tools";
 import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
 import { registerCandidateReviewTools } from "../tools/candidate.review.tools";
 import { registerCandidateResultsTools } from "../tools/candidate.results.tools";
+import { registerPhoneViewTools } from "../tools/phone.view.tools";
+import { registerResumeViewTools } from "../tools/resume.view.tools";
+import { registerVipViewTools } from "../tools/vip.view.tools";
 
 const LABEL = "hyring-mcp";
 
@@ -37,6 +40,9 @@ async function main() {
   registerCandidateInviteTools(server);
   registerCandidateReviewTools(server);
   registerCandidateResultsTools(server);
+  registerPhoneViewTools(server);
+  registerResumeViewTools(server);
+  registerVipViewTools(server);
 
   await startStdio(server, LABEL);
 }

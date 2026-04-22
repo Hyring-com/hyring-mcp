@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
-import { registerAssessmentViewTools } from "../tools/assessment.view.tools";
 import { registerVipBuildTools } from "../tools/build/vip.tools";
+import { registerVipViewTools } from "../tools/vip.view.tools";
 
 const LABEL = "hyring-mcp-vip";
 
@@ -13,7 +13,7 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerAssessmentViewTools(server);
+  registerVipViewTools(server);
   registerVipBuildTools(server);
 
   await startStdio(server, LABEL);

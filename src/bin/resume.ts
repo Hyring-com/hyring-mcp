@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
-import { registerAssessmentViewTools } from "../tools/assessment.view.tools";
 import { registerResumeBuildTools } from "../tools/build/resume.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
 import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
+import { registerResumeViewTools } from "../tools/resume.view.tools";
 
 const LABEL = "hyring-mcp-resume";
 
@@ -15,7 +15,7 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerAssessmentViewTools(server);
+  registerResumeViewTools(server);
   registerResumeBuildTools(server);
   registerSharedBuildTools(server);
   registerCandidateInviteTools(server);

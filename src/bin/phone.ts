@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
-import { registerAssessmentViewTools } from "../tools/assessment.view.tools";
 import { registerPhoneBuildTools } from "../tools/build/phone.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
 import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
+import { registerPhoneViewTools } from "../tools/phone.view.tools";
 
 const LABEL = "hyring-mcp-phone";
 
@@ -15,7 +15,7 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerAssessmentViewTools(server);
+  registerPhoneViewTools(server);
   registerPhoneBuildTools(server);
   registerSharedBuildTools(server);
   registerCandidateInviteTools(server);
