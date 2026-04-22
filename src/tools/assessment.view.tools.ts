@@ -134,30 +134,39 @@ export function registerAssessmentViewTools(server: McpServer) {
   // ── get_assessment_stats ──────────────────────────────────────────────────────
   server.tool(
     "get_assessment_stats",
-    "Returns overall statistics for an assessment: invited, attended, qualified, average score, etc.",
+    "Returns candidate counts for an assessment by status: attended, invited, started, declined, not qualified, retake, scheduled.",
     { assessmentId: z.string().describe("Assessment UUID") },
     async ({ assessmentId }) => {
       try {
         requireAuth();
-        const res = await screenerClient.get(`/assessment/assessment-stats/${assessmentId}`);
-        const stats = res.data?.data ?? res.data;
+        // Confirmed from backend source:
+        // /assessment/assessment-stats/:id  → returns [active, inactive, archived, draft] — assessment status counts, NOT candidate counts
+        // /assessment/view/assessment-stats/:id → returns [attended, invited, started, declined, not_qualified, retake, scheduled]
+        const res = await screenerClient.get(`/assessment/view/assessment-stats/${assessmentId}`);
+        const raw = res.data?.data ?? res.data;
 
-        if (!stats) {
+        if (!raw) {
           return { content: [{ type: "text" as const, text: "No stats found for this assessment." }] };
         }
 
+        // Positional array: [attended, invited, started, declined, not_qualified, retake, scheduled]
+        const attended     = Array.isArray(raw) ? (raw[0] ?? 0) : "N/A";
+        const invited      = Array.isArray(raw) ? (raw[1] ?? 0) : "N/A";
+        const started      = Array.isArray(raw) ? (raw[2] ?? 0) : "N/A";
+        const declined     = Array.isArray(raw) ? (raw[3] ?? 0) : "N/A";
+        const notQualified = Array.isArray(raw) ? (raw[4] ?? 0) : "N/A";
+        const retake       = Array.isArray(raw) ? (raw[5] ?? 0) : "N/A";
+        const scheduled    = Array.isArray(raw) ? (raw[6] ?? 0) : "N/A";
+
         const text = [
-          `=== Assessment Stats: ${assessmentId} ===`,
-          `Total Invited:   ${stats.totalInvited  ?? stats.invited  ?? "N/A"}`,
-          `Attended:        ${stats.attended       ?? "N/A"}`,
-          `Completed:       ${stats.completed      ?? "N/A"}`,
-          `Qualified:       ${stats.qualified      ?? "N/A"}`,
-          `Not Qualified:   ${stats.notQualified   ?? "N/A"}`,
-          `Declined:        ${stats.declined       ?? "N/A"}`,
-          `Scheduled:       ${stats.scheduled      ?? "N/A"}`,
-          `Retake Requests: ${stats.retakeRequests ?? "N/A"}`,
-          `Average Score:   ${stats.averageScore   ?? "N/A"}`,
-          `Total Views:     ${stats.totalViews     ?? "N/A"}`,
+          `=== Candidate Stats: ${assessmentId} ===`,
+          `Attended (Completed): ${attended}`,
+          `Invited:              ${invited}`,
+          `Started:              ${started}`,
+          `Declined:             ${declined}`,
+          `Not Qualified:        ${notQualified}`,
+          `Retake Requests:      ${retake}`,
+          `Scheduled:            ${scheduled}`,
         ].join("\n");
 
         return { content: [{ type: "text" as const, text }] };

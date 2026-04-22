@@ -19,6 +19,9 @@ export function registerCandidateManageTools(server: McpServer) {
       try {
         requireAuth();
 
+        // Backend routes confirmed: all use view/ prefix
+        // Response tuple: [assessmentData, topFiveCandidate, filteredResponses, total_count, filtered_count, stageCountsData, metrics]
+        // Candidates are at index [2], total_count at index [3]
         const endpointMap: Record<string, string> = {
           completed:     `/assessment/view/attended/${assessmentId}`,
           invited:       `/assessment/view/invited/${assessmentId}`,
@@ -29,25 +32,44 @@ export function registerCandidateManageTools(server: McpServer) {
 
         const res = await screenerClient.get(endpointMap[status], { params: { skip, take } });
         const raw = res.data?.data;
-        const candidates: any[] = Array.isArray(raw) ? raw : raw?.candidates ?? raw?.items ?? [];
+
+        // Backend returns a tuple: [assessment_info, top_candidates, candidates_list, total_count, ...]
+        // candidates_list is always at index 2 for attended/status views
+        let candidates: any[] = [];
+        if (Array.isArray(raw)) {
+          // Tuple response — candidates are at index 2
+          const slot2 = raw[2];
+          candidates = Array.isArray(slot2) ? slot2 : [];
+          // Fallback: if slot2 is empty but raw itself looks like a flat list of candidates
+          if (!candidates.length && raw.length > 0 && raw[0]?.seekerId != null) {
+            candidates = raw;
+          }
+        } else {
+          candidates = raw?.candidates ?? raw?.items ?? [];
+        }
+
+        const totalCount: number = Array.isArray(raw) && typeof raw[3] === "number" ? raw[3] : candidates.length;
 
         if (!candidates.length) {
-          return { content: [{ type: "text" as const, text: `No ${status} candidates for assessment ${assessmentId}.` }] };
+          return { content: [{ type: "text" as const, text: `No ${status} candidates for assessment ${assessmentId}. Total on record: ${totalCount}` }] };
         }
 
         const lines = candidates.map((c: any, i: number) => {
-          const score    = c.totalScore != null
-            ? ` | Score: ${c.totalScore}`
-            : c.overallScore != null ? ` | Score: ${c.overallScore}` : "";
+          const seeker   = c.seekerCat ?? c;
+          const name     = c.name ?? ([seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A");
+          const email    = c.email ?? seeker.email ?? "N/A";
+          const score    = c.totalScore != null ? ` | Score: ${c.totalScore}` : "";
           const stage    = c.hiringStage ? ` | Stage: ${c.hiringStage}` : "";
-          const resultId = c.resultId ?? c.id;
-          return `${i + 1}. [SeekerId: ${c.seekerId ?? c.id}${resultId ? ` | ResultId: ${resultId}` : ""}] ${c.name ?? "N/A"} <${c.email ?? "N/A"}>${score}${stage} | Status: ${c.assessmentStatus ?? c.status ?? "N/A"}`;
+          const seekerId = c.seekerId ?? seeker.seekerId ?? c.id;
+          const statusId = c.id ?? c.statusId;
+          const batch    = c.batch ?? "";
+          return `${skip + i + 1}. [SeekerId: ${seekerId} | StatusId: ${statusId}${batch ? ` | Batch: ${batch}` : ""}] ${name} <${email}>${score}${stage} | Status: ${c.assessmentStatus ?? c.status ?? "N/A"}`;
         });
 
         return {
           content: [{
             type: "text" as const,
-            text: `${candidates.length} ${status} candidate(s) for assessment ${assessmentId}:\n\n${lines.join("\n")}`,
+            text: `Showing ${candidates.length} of ${totalCount} ${status} candidate(s) for assessment ${assessmentId}:\n\n${lines.join("\n")}`,
           }],
         };
       } catch (err) {

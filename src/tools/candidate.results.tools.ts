@@ -53,15 +53,20 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         let candidates: any[] = [];
 
         if (interviewType === "verbal") {
-          // Verbal attended list
-          const res = await screenerClient.get(`/assessment/verbal/attended/seekers/${assessmentId}`);
+          // Verbal attended — tuple: [assessmentData, topFive, filteredResponses, total_count, ...]
+          // Candidates at index [2]
+          const res = await screenerClient.get(`/assessment/verbal/attended/${assessmentId}`);
           const raw = res.data?.data;
-          candidates = Array.isArray(raw) ? raw : Array.isArray(raw?.[0]) ? raw[0] : [];
+          if (Array.isArray(raw)) {
+            const slot2 = raw[2];
+            candidates = Array.isArray(slot2) ? slot2 : [];
+          }
         } else {
-          // Fixed / dynamic / coding attended list
+          // /assessment/view/attended/seekers/:id — confirmed FLAT ARRAY (not tuple)
+          // Each item: { id, batch, assessmentId, seekerId, seekerCat: { firstName, lastName, email, ... } }
           const res = await screenerClient.get(`/assessment/view/attended/seekers/${assessmentId}`);
-          const raw = res.data?.data;
-          candidates = Array.isArray(raw) ? raw : Array.isArray(raw?.[0]) ? raw[0] : [];
+          const raw = res.data?.data ?? res.data;
+          candidates = Array.isArray(raw) ? raw : [];
         }
 
         if (!candidates.length) {
@@ -117,12 +122,13 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const res = await screenerClient.post("/assessment/result", {
           seekerId,
           assessmentId,
-          batch: batch ?? null,
+          batch: batch ?? 1,   // default 1 — null causes backend to find no rows
         });
 
-        // Response shape: { data: [result_obj, extra, count_obj] }
+        // Response: { data: [result, sentiment, result_stats, english_score, final_score] }
         const raw: any[] = res.data?.data ?? [];
-        const r = Array.isArray(raw) ? raw[0] : raw;
+        const r          = Array.isArray(raw) ? raw[0] : raw;   // main result object
+        const finalScore = Array.isArray(raw) ? raw[4] : null;  // final calculated score (string/number)
 
         if (!r) {
           return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
@@ -136,7 +142,8 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const batchNum    = (batch ?? 1) - 1;
         const engScores   = seeker.HyringScreenerResult?.[batchNum] ?? {};
         const questions: any[] = assessment.hyringScreenerQuestions ?? [];
-        const answeredCount = raw[2]?._count ?? "N/A";
+        const resultStats   = Array.isArray(raw) ? raw[2] : null;
+        const answeredCount = resultStats?._count ?? resultStats ?? "N/A";
 
         // Communication scores: prefer video analysis, fallback to english_score fields
         const grammar      = speech.grammar       ?? engScores.english_score        ?? "N/A";
@@ -175,6 +182,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           ``,
           `--- Scores ---`,
           `Overall Score:        ${na(r.totalScore)}`,
+          `Final Score:          ${na(finalScore)}`,
           `Fit Score:            ${fitScore}`,
           `  Weights → Technical: ${na(weights.technicalScore)}% | Communication: ${na(weights.communicationScore)}%`,
           `Questions Answered:   ${answeredCount} / ${questions.length}`,
@@ -220,11 +228,12 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const res = await screenerClient.post("/seeker/dynamic-interview/context-result", {
           seekerId,
           assessmentId,
-          batch: batch ?? null,
+          batch: batch ?? 1,
         });
 
-        // Response shape: { data: { data: twoWayResult } }
-        const r = res.data?.data?.data ?? res.data?.data ?? res.data;
+        // Backend returns: { status: true, message: "ok", data: result }
+        // So res.data.data = the twoWayInterviewResult object directly
+        const r = res.data?.data ?? res.data;
 
         if (!r) {
           return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
@@ -326,12 +335,14 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const res = await screenerClient.post("/assessment/result/coding", {
           seekerId,
           assessmentId,
-          batch: batch ?? null,
+          batch: batch ?? 1,
         });
 
-        // Response shape: { data: [result_obj, extra, count_obj] }
+        // Response: { data: [result, [], result_stats, sums, final_score] }
         const raw: any[] = res.data?.data ?? [];
-        const r = Array.isArray(raw) ? raw[0] : raw;
+        const r          = Array.isArray(raw) ? raw[0] : raw;    // main result
+        const sums       = Array.isArray(raw) ? raw[3] : null;   // { codeQuality, problemSolving, codeOptimization, score }
+        const finalScore = Array.isArray(raw) ? raw[4] : null;   // final score breakdown
 
         if (!r) {
           return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
@@ -342,24 +353,25 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const weights       = assessment.fitScoreWeightAge?.[0] ?? {};
         const videoResult   = assessment.HyringScreenerVideoAnalysisResult?.[0] ?? {};
         const codingQs: any[] = assessment.HyringScreenerCodingQuestions ?? [];
-        const answeredCount = raw[2]?._count ?? "N/A";
+        const resultStats   = Array.isArray(raw) ? raw[2] : null;
+        const answeredCount = resultStats?._count ?? resultStats ?? "N/A";
 
-        // Per-question scores
+        // Use aggregate sums from raw[3] directly (backend pre-calculates these)
+        const aggCQ  = sums?.codeQuality     ?? sums?.code_quality     ?? null;
+        const aggPS  = sums?.problemSolving  ?? sums?.problem_solving  ?? null;
+        const aggCO  = sums?.codeOptimization ?? sums?.code_optimization ?? null;
+        const fitScore = calcCodingFitScore(
+          { codeQuality: aggCQ ?? 0, problemSolving: aggPS ?? 0, codeOptimization: aggCO ?? 0 },
+          weights,
+        );
+
+        // Per-question breakdown
         const batchNum = (batch ?? 1) - 1;
-        let totalCodeQuality    = 0;
-        let totalProblemSolving = 0;
-        let totalOptimization   = 0;
-        let scoredCount         = 0;
-
         const qLines = codingQs.map((q: any, i: number) => {
           const ans = q.HyringScreenerCodingAnswers?.[batchNum] ?? q.answers?.[batchNum] ?? {};
-          const cq  = ans.codeQuality    ?? ans.code_quality    ?? q.codeQuality    ?? null;
-          const ps  = ans.problemSolving ?? ans.problem_solving ?? q.problemSolving ?? null;
-          const co  = ans.codeOptimization ?? ans.code_optimization ?? q.codeOptimization ?? null;
-          if (cq != null) { totalCodeQuality    += cq; scoredCount++; }
-          if (ps != null)   totalProblemSolving  += ps;
-          if (co != null)   totalOptimization    += co;
-
+          const cq  = ans.codeQuality     ?? q.codeQuality     ?? null;
+          const ps  = ans.problemSolving  ?? q.problemSolving  ?? null;
+          const co  = ans.codeOptimization ?? q.codeOptimization ?? null;
           return [
             `  Q${i + 1}: ${q.question ?? q.concept ?? "N/A"}`,
             `  Type: ${q.codingType ?? "N/A"} | Exercise: ${q.questionType ?? "N/A"} | Duration: ${na(q.duration)} min | Lang: ${na(q.language)}`,
@@ -367,15 +379,9 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           ].join("\n");
         });
 
-        const avgCQ = scoredCount ? (totalCodeQuality    / scoredCount).toFixed(1) : "N/A";
-        const avgPS = scoredCount ? (totalProblemSolving / scoredCount).toFixed(1) : "N/A";
-        const avgCO = scoredCount ? (totalOptimization   / scoredCount).toFixed(1) : "N/A";
-        const fitScore = scoredCount
-          ? calcCodingFitScore(
-              { codeQuality: totalCodeQuality / scoredCount, problemSolving: totalProblemSolving / scoredCount, codeOptimization: totalOptimization / scoredCount },
-              weights,
-            )
-          : "N/A";
+        const avgCQ = na(aggCQ);
+        const avgPS = na(aggPS);
+        const avgCO = na(aggCO);
 
         const lines = [
           `=== CODING INTERVIEW REPORT ===`,
@@ -393,6 +399,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           ``,
           `--- Scores ---`,
           `Overall Score:       ${na(r.totalScore)}`,
+          `Final Score:         ${finalScore ? JSON.stringify(finalScore) : "N/A"}`,
           `Fit Score:           ${fitScore}`,
           `  Weights → Code Quality: ${na(weights.codeQuality)}% | Problem Solving: ${na(weights.problemSolving)}% | Optimization: ${na(weights.codeOptimization)}%`,
           `Avg Code Quality:    ${avgCQ}`,
