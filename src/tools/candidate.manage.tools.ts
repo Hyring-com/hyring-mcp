@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { screenerClient, requireAuth, extractError, getEmployerIdFromAPI } from "../api/screener.client";
 
-export function registerCandidateTools(server: McpServer) {
+export function registerCandidateManageTools(server: McpServer) {
 
   // ── list_candidates ───────────────────────────────────────────────────────────
   server.tool(
@@ -20,11 +20,11 @@ export function registerCandidateTools(server: McpServer) {
         requireAuth();
 
         const endpointMap: Record<string, string> = {
-          completed:    `/assessment/view/attended/${assessmentId}`,
-          invited:      `/assessment/view/invited/${assessmentId}`,
-          started:      `/assessment/view/started/${assessmentId}`,
-          declined:     `/assessment/view/declined/${assessmentId}`,
-          not_qualified:`/assessment/view/not-qualified/${assessmentId}`,
+          completed:     `/assessment/view/attended/${assessmentId}`,
+          invited:       `/assessment/view/invited/${assessmentId}`,
+          started:       `/assessment/view/started/${assessmentId}`,
+          declined:      `/assessment/view/declined/${assessmentId}`,
+          not_qualified: `/assessment/view/not-qualified/${assessmentId}`,
         };
 
         const res = await screenerClient.get(endpointMap[status], { params: { skip, take } });
@@ -36,10 +36,10 @@ export function registerCandidateTools(server: McpServer) {
         }
 
         const lines = candidates.map((c: any, i: number) => {
-          const score = c.totalScore != null
+          const score    = c.totalScore != null
             ? ` | Score: ${c.totalScore}`
             : c.overallScore != null ? ` | Score: ${c.overallScore}` : "";
-          const stage   = c.hiringStage    ? ` | Stage: ${c.hiringStage}`              : "";
+          const stage    = c.hiringStage ? ` | Stage: ${c.hiringStage}` : "";
           const resultId = c.resultId ?? c.id;
           return `${i + 1}. [SeekerId: ${c.seekerId ?? c.id}${resultId ? ` | ResultId: ${resultId}` : ""}] ${c.name ?? "N/A"} <${c.email ?? "N/A"}>${score}${stage} | Status: ${c.assessmentStatus ?? c.status ?? "N/A"}`;
         });
@@ -159,8 +159,8 @@ Stages:
           id:     resultId,
           status: stage,
         };
-        if (rejectReason)               payload.rejectReason     = rejectReason;
-        if (hideRejectReason !== undefined) payload.hideRejectReason = hideRejectReason;
+        if (rejectReason)                   payload.rejectReason     = rejectReason;
+        if (hideRejectReason !== undefined)  payload.hideRejectReason = hideRejectReason;
 
         await screenerClient.patch("/assessment/result-change", payload);
 
@@ -191,108 +191,6 @@ Stages:
         return {
           content: [{ type: "text" as const, text: `Reminder sent for invite ${inviteId}.` }],
         };
-      } catch (err) {
-        return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
-      }
-    }
-  );
-
-  // ── get_candidate_result ──────────────────────────────────────────────────────
-  server.tool(
-    "get_candidate_result",
-    "Returns detailed interview results for a candidate: overall score, per-question scores, transcripts, and AI summary.",
-    {
-      assessmentId: z.string().describe("Assessment UUID"),
-      seekerId:     z.number().describe("Candidate seekerId from list_candidates"),
-      batch:        z.number().optional().describe("Retake batch number. Default: 1"),
-    },
-    async ({ assessmentId, seekerId, batch }) => {
-      try {
-        requireAuth();
-        const res = await screenerClient.post("/assessment/result", {
-          assessmentId,
-          seekerId,
-          batch: batch ?? 1,
-        });
-        const r = res.data?.data ?? res.data;
-
-        if (!r) {
-          return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
-        }
-
-        const questions: any[] = Array.isArray(r.questions) ? r.questions : [];
-        const qLines = questions.map((q: any, i: number) =>
-          `  Q${i + 1}: ${q.question ?? "N/A"}\n  Score: ${q.score ?? "N/A"} | English: ${q.english_score ?? "N/A"}\n  Transcript: ${q.transcript ? q.transcript.slice(0, 150) + "..." : "N/A"}`
-        );
-
-        const text = [
-          `=== Candidate Result ===`,
-          `SeekerId: ${seekerId} | Assessment: ${assessmentId}`,
-          `Overall Score:       ${r.totalScore        ?? r.overallScore ?? "N/A"}`,
-          `Communication Score: ${r.communicationScore ?? "N/A"}`,
-          `Hiring Stage:        ${r.hiringStage        ?? "N/A"}`,
-          `Status:              ${r.assessmentStatus   ?? r.status ?? "N/A"}`,
-          `AI Summary: ${r.ai_summary ?? "N/A"}`,
-          ``,
-          qLines.length
-            ? `Question Breakdown:\n${qLines.join("\n\n")}`
-            : "No question breakdown available.",
-        ].join("\n");
-
-        return { content: [{ type: "text" as const, text }] };
-      } catch (err) {
-        return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
-      }
-    }
-  );
-
-  // ── get_candidate_report ──────────────────────────────────────────────────────
-  server.tool(
-    "get_candidate_report",
-    "Returns the full AI-evaluated report for a candidate (fixed, dynamic, or coding interview). Includes fit score, communication analysis, and detailed breakdown.",
-    {
-      assessmentId:  z.string().describe("Assessment UUID"),
-      seekerId:      z.number().describe("Candidate seekerId"),
-      interviewType: z.enum(["fixed", "dynamic", "coding"]).describe("Type of assessment"),
-    },
-    async ({ assessmentId, seekerId, interviewType }) => {
-      try {
-        requireAuth();
-
-        const endpointMap: Record<string, string> = {
-          fixed:   "/assessment/report/fixed",
-          dynamic: "/assessment/report/dynamic",
-          coding:  "/assessment/report/coding",
-        };
-
-        const res = await screenerClient.post(endpointMap[interviewType], {
-          assessmentId,
-          seekerId,
-        });
-        const r = res.data?.data ?? res.data;
-
-        if (!r) {
-          return { content: [{ type: "text" as const, text: "No report found." }] };
-        }
-
-        const fitBreakdown = r.fitScoreWeightAge
-          ? `\nFit Score Breakdown:\n${JSON.stringify(r.fitScoreWeightAge, null, 2)}`
-          : "";
-
-        const text = [
-          `=== ${interviewType.toUpperCase()} Interview Report ===`,
-          `Candidate SeekerId: ${seekerId}`,
-          `Assessment: ${assessmentId}`,
-          `Overall Score:       ${r.overallScore  ?? r.totalScore ?? "N/A"}`,
-          `Fit Score:           ${r.fitScore       ?? "N/A"}`,
-          `Communication Score: ${r.communicationScore ?? "N/A"}`,
-          `Hiring Stage:        ${r.hiringStage    ?? "N/A"}`,
-          ``,
-          `AI Summary:\n${r.ai_summary ?? r.summary ?? "N/A"}`,
-          fitBreakdown,
-        ].join("\n");
-
-        return { content: [{ type: "text" as const, text }] };
       } catch (err) {
         return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
       }

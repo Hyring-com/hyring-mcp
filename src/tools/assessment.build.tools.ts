@@ -2,143 +2,19 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { screenerClient, requireAuth, extractError, getEmployerIdFromAPI } from "../api/screener.client";
 
-export function registerAssessmentTools(server: McpServer) {
+// Rounds total question seconds UP to the nearest fixed slot
+// Slots (from UI): 10min=600, 15min=900, 20min=1200, 25min=1500, 60min=3600
+function roundToSlot(totalSeconds: number): number {
+  if (totalSeconds <= 600)  return 600;
+  if (totalSeconds <= 900)  return 900;
+  if (totalSeconds <= 1200) return 1200;
+  if (totalSeconds <= 1500) return 1500;
+  return 3600;
+}
 
-  // ── list_assessments ─────────────────────────────────────────────────────────
-  // FIX: was using /employer/assessment/get-jds (lists JDs, not assessments)
-  //      correct endpoint: /assessment/active|inactive|drafts|archived/:employerId
-  server.tool(
-    "list_assessments",
-    "Lists all assessments for the authenticated employer. Returns assessment IDs needed for all other tools.",
-    {
-      status: z.enum(["active", "inactive", "drafts", "archived"]).optional()
-        .describe("Filter by status. Default: active"),
-      page: z.number().optional().describe("Page number (1-based). Default: 1"),
-      take: z.number().optional().describe("Results per page. Default: 50"),
-      search: z.string().optional().describe("Search by job title"),
-    },
-    async ({ status = "active", page = 1, take = 50, search }) => {
-      try {
-        requireAuth();
-        const employerId = await getEmployerIdFromAPI();
-
-        const endpointMap: Record<string, string> = {
-          active:   `/assessment/active/${employerId}`,
-          inactive: `/assessment/inactive/${employerId}`,
-          drafts:   `/assessment/drafts/${employerId}`,
-          archived: `/assessment/archived/${employerId}`,
-        };
-
-        // Backend: skip is page number (0-based), skip * take = offset
-        const params: any = { skip: page - 1, take };
-        if (search) params.search = search;
-
-        const res = await screenerClient.get(endpointMap[status], { params });
-
-        // Response shape: { data: [assessmentsArray, totalCount] }
-        const raw = res.data?.data;
-        const assessments: any[] = Array.isArray(raw) && Array.isArray(raw[0]) ? raw[0] : [];
-        const totalCount: number  = Array.isArray(raw) && typeof raw[1] === "number" ? raw[1] : assessments.length;
-
-        if (!assessments.length) {
-          return { content: [{ type: "text" as const, text: `No ${status} assessments found.` }] };
-        }
-
-        const typeLabel: Record<string, string> = {
-          fixed:   "One-way Interview",
-          dynamic: "Two-way Interview",
-          coding:  "Coding Interview",
-          verbal:  "English Proficiency Test",
-          phone:   "Phone Screener",
-          resume:  "Resume Screener",
-        };
-
-        const lines = assessments.map((a: any, i: number) => {
-          const type       = a.interviewType ? (typeLabel[a.interviewType] ?? a.interviewType) : "N/A";
-          const candidates = a._count?.HyringScreenerStatus ?? "N/A";
-          const questions  = a._count?.hyringScreenerQuestions ?? a._count?.HyringScreenerContext ?? "N/A";
-          const id         = a.assessmentUuid ?? a.id;
-          return `${(page - 1) * take + i + 1}. [ID: ${id}] ${a.jobTitle ?? "Untitled"} — Type: ${type} | Status: ${a.status ?? "N/A"} | Candidates: ${candidates} | Questions: ${questions}`;
-        });
-
-        const showing = `Showing ${assessments.length} of ${totalCount} ${status} assessment(s) (page ${page}):`;
-        const hint    = totalCount > page * take ? `\n\nUse page: ${page + 1} to see more.` : "";
-
-        return {
-          content: [{
-            type: "text" as const,
-            text: `${showing}\n\n${lines.join("\n")}${hint}`,
-          }],
-        };
-      } catch (err) {
-        return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
-      }
-    }
-  );
-
-  // ── get_assessment ────────────────────────────────────────────────────────────
-  server.tool(
-    "get_assessment",
-    "Returns full details of a specific assessment by its UUID.",
-    { assessmentId: z.string().describe("Assessment UUID from list_assessments") },
-    async ({ assessmentId }) => {
-      try {
-        requireAuth();
-        const res = await screenerClient.get(`/employer/assessment/job-details/${assessmentId}`);
-        // Response: { data: [assessmentObj, planStatus, teamEmails, slack, hrVideos, oauth] }
-        const raw = res.data?.data;
-        const a = Array.isArray(raw) ? raw[0] : (raw ?? null);
-
-        if (!a) {
-          return { content: [{ type: "text" as const, text: "Assessment not found." }] };
-        }
-
-        const skillNames = Array.isArray(a.skills)
-          ? a.skills.map((s: any) => (typeof s === "string" ? s : s.name)).join(", ")
-          : "N/A";
-
-        const contexts: any[] = a.HyringScreenerContext ?? [];
-        const contextLines = contexts.length
-          ? contexts.map((c: any) => `  - ${c.skill} (${c.level})${c.concept?.length ? ": " + c.concept.join(", ") : ""}`).join("\n")
-          : "  None";
-
-        const text = [
-          `ID: ${assessmentId}`,
-          `Title: ${a.jobTitle ?? "N/A"}`,
-          `Interview Type: ${a.interviewType ?? "N/A"}`,
-          `Seniority: ${a.seniorityLevel ?? "N/A"}`,
-          `Employment Type: ${a.employmentType ?? "N/A"}`,
-          `Workplace: ${a.workPlaceType ?? "N/A"}`,
-          `Experience: ${a.yearOfExperienceFrom ?? 0}–${a.yearOfExperienceTo ?? 0} years`,
-          `Skills: ${skillNames}`,
-          `Status: ${a.status ?? "N/A"}`,
-          `Language: ${a.language ?? "N/A"}`,
-          `Avatar Type: ${a.avatarType ?? "N/A"}`,
-          `AI Voice: ${a.aiVoice ?? "N/A"}`,
-          `Expiry: ${a.expiryDate ?? "No expiry"}`,
-          `Schedule Assessment: ${a.scheduleAssessment ?? "N/A"}`,
-          `Screen Share: ${a.enableScreenShare ?? "N/A"}`,
-          `Candidate Video: ${a.candidateVideo ?? "N/A"}`,
-          `Retake: ${a.retakeAssessment ?? "N/A"}`,
-          `Interview Time: ${a.interviewTime ?? "N/A"}s`,
-          `Candidates: ${a.HyringScreenerStatus?.length ?? 0}`,
-          `Created: ${a.createdAt ?? "N/A"}`,
-          `Interview Context:\n${contextLines}`,
-          `Description:\n${a.jobDescription ?? "N/A"}`,
-        ].join("\n");
-
-        return { content: [{ type: "text" as const, text }] };
-      } catch (err) {
-        return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
-      }
-    }
-  );
+export function registerAssessmentBuildTools(server: McpServer) {
 
   // ── create_assessment ─────────────────────────────────────────────────────────
-  // FIX 1: Step 2 — status was "jd" → corrected to "JD_UPDATED"
-  // FIX 2: Step 3 — was POST (wrong), now PATCH /employer/assessment/job-details/:id
-  //                  assessmentConstraint was "Standard" → corrected to "NO_EXPIRY"
-  //                  status was "details" → corrected to "JOB_DETAILS_UPDATED"
   server.tool(
     "create_assessment",
     `Creates a new interview assessment in three steps: type selection → JD upload → job details.
@@ -292,13 +168,13 @@ Difficulty:     Easy, Moderate, Hard
 Answer types:   Voice, Video, Mcq
 Time (seconds): 30, 60, 90, 120`,
     {
-      assessmentId:  z.string().describe("Assessment UUID"),
-      question:      z.string().describe("The question text"),
-      questionType:  z.enum(["General", "Technical"]).optional().describe("Default: General"),
+      assessmentId:    z.string().describe("Assessment UUID"),
+      question:        z.string().describe("The question text"),
+      questionType:    z.enum(["General", "Technical"]).optional().describe("Default: General"),
       difficultyLevel: z.enum(["Easy", "Moderate", "Hard"]).optional().describe("Default: Moderate"),
-      answerType:    z.enum(["Voice", "Video", "Mcq"]).optional().describe("How the candidate answers. Default: Voice"),
-      timeToAnswer:  z.number().optional().describe("Time limit in seconds. Default: 30"),
-      mcqOptions:    z.array(z.object({
+      answerType:      z.enum(["Voice", "Video", "Mcq"]).optional().describe("How the candidate answers. Default: Voice"),
+      timeToAnswer:    z.number().optional().describe("Time limit in seconds. Default: 30"),
+      mcqOptions:      z.array(z.object({
         option:    z.string(),
         isCorrect: z.boolean(),
       })).optional().describe("MCQ options — required when answerType is Mcq"),
@@ -462,7 +338,7 @@ You only need to provide concepts and difficulty level — skill names come from
         requireAuth();
         const employerId = await getEmployerIdFromAPI();
 
-        // Fetch assessment to get skills (same list shown in UI context step)
+        // Fetch assessment to get skills
         const aRes = await screenerClient.get(`/employer/assessment/job-details/${assessmentId}`);
         const raw = aRes.data?.data;
         const assessment = Array.isArray(raw) ? raw[0] : raw;
@@ -487,16 +363,13 @@ You only need to provide concepts and difficulty level — skill names come from
         let selectedSkills: string[];
 
         if (overrides && overrides.length >= 3) {
-          // User specified skills explicitly — use those (already validated 3–5 by Zod)
           selectedSkills = overrides.map((o) => {
-            // Find matching assessment skill (case-insensitive)
             const match = assessmentSkills.find(
               (s: any) => (typeof s === "string" ? s : s.name).toLowerCase() === o.skill.toLowerCase()
             );
             return match ? (typeof match === "string" ? match : match.name) : o.skill;
           });
         } else {
-          // Auto-select: take first 5 (or all if ≤ 5)
           selectedSkills = assessmentSkills
             .slice(0, 5)
             .map((s: any) => (typeof s === "string" ? s : s.name));
@@ -617,20 +490,20 @@ Exercise types (questionType):
 
 Duration options: 5, 10, or 15 minutes (stored as minutes directly).`,
     {
-      assessmentId:  z.string().describe("Assessment UUID"),
-      codingType:    z.enum(["CustomCode", "AI_GeneratedCode"]).describe("CustomCode = manual, AI_GeneratedCode = AI generates from concept"),
-      questionType:  z.enum(["debugging", "complete_code", "code_completion"]).describe("Exercise type"),
-      duration:      z.union([z.literal(5), z.literal(10), z.literal(15)]).describe("Time limit in minutes: 5, 10, or 15"),
-      language:      z.enum([
+      assessmentId: z.string().describe("Assessment UUID"),
+      codingType:   z.enum(["CustomCode", "AI_GeneratedCode"]).describe("CustomCode = manual, AI_GeneratedCode = AI generates from concept"),
+      questionType: z.enum(["debugging", "complete_code", "code_completion"]).describe("Exercise type"),
+      duration:     z.union([z.literal(5), z.literal(10), z.literal(15)]).describe("Time limit in minutes: 5, 10, or 15"),
+      language:     z.enum([
         "c", "clojure", "cpp", "csharp", "fsharp", "go", "java", "javascript",
         "kotlin", "lua", "objective-c", "pascal", "perl", "php", "python",
         "r", "ruby", "rust", "sql", "swift", "typescript",
       ]).describe("Programming language"),
       // CustomCode fields
-      question:      z.string().optional().describe("Problem description — required for CustomCode"),
-      code:          z.string().optional().describe("Starter code template — required for CustomCode"),
+      question:     z.string().optional().describe("Problem description — required for CustomCode"),
+      code:         z.string().optional().describe("Starter code template — required for CustomCode"),
       // AI_GeneratedCode fields
-      concept:       z.string().optional().describe("Concept or prompt for AI to generate the question — required for AI_GeneratedCode"),
+      concept:      z.string().optional().describe("Concept or prompt for AI to generate the question — required for AI_GeneratedCode"),
     },
     async ({ assessmentId, codingType, questionType, duration, language, question, code, concept }) => {
       try {
@@ -641,7 +514,6 @@ Duration options: 5, 10, or 15 minutes (stored as minutes directly).`,
           if (!concept) {
             return { content: [{ type: "text" as const, text: "concept is required for AI_GeneratedCode." }] };
           }
-          // AI generated — different endpoint, uses concept not question
           await screenerClient.post(`/employer/assessment/generate-coding-questions/${employerId}`, {
             assessmentRefId: assessmentId,
             concept,
@@ -661,7 +533,6 @@ Duration options: 5, 10, or 15 minutes (stored as minutes directly).`,
           if (!question) {
             return { content: [{ type: "text" as const, text: "question is required for CustomCode." }] };
           }
-          // Custom manual question
           await screenerClient.post(`/employer/assessment/add-coding-questions/${employerId}`, {
             assessmentRefId: assessmentId,
             question,
@@ -699,27 +570,27 @@ Assessment constraint (flexi only):
 - "SET_DATE"              = Expires on expiryDate
 - "SET_RESPONSES_COUNT"   = Closes after responseCount responses`,
     {
-      assessmentId:          z.string().describe("Assessment UUID"),
-      interviewType:         z.enum(["fixed", "dynamic", "coding", "verbal"]).optional().describe("Interview type — used to set correct fitScoreWeightAge and interviewTime defaults"),
-      availability:          z.enum(["flexi", "schedule"]).optional().describe("Default: flexi"),
-      assessmentConstraint:  z.enum(["NO_EXPIRY", "SET_DATE", "SET_RESPONSES_COUNT"]).optional().describe("Default: NO_EXPIRY"),
-      expiryDate:            z.string().optional().describe("ISO date, e.g. '2025-12-31' — required if constraint is SET_DATE"),
-      responseCount:         z.number().optional().describe("Max responses — required if constraint is SET_RESPONSES_COUNT"),
-      scheduleStart:         z.string().optional().describe("ISO datetime for schedule start — required if availability is schedule"),
-      scheduleEnd:           z.string().optional().describe("ISO datetime for schedule end — required if availability is schedule"),
-      interviewTime:         z.number().optional().describe("Override interview duration in seconds. If omitted, auto-calculated from questions (fixed/coding) and rounded to nearest slot: 600/900/1200/1500/3600"),
-      retakeAllowed:         z.boolean().optional().describe("Allow retakes. Default: true"),
-      candidateVideo:        z.boolean().optional().describe("Record candidate video. Default: true"),
-      enableScreenShare:     z.boolean().optional().describe("Enable screen sharing. Default: true"),
-      tabChangeDetection:    z.boolean().optional().describe("Flag tab switches. Default: false"),
-      faceDetection:         z.boolean().optional().describe("Flag face out of view. Default: false"),
-      multipleFaceDetection: z.boolean().optional().describe("Flag multiple faces. Default: false"),
-      overallScoreVisible:   z.boolean().optional().describe("Show overall score to candidate. Default: false"),
-      individualScoreVisible:z.boolean().optional().describe("Show per-question score to candidate. Default: false"),
-      emailNotification:     z.boolean().optional().describe("Email notifications on completion. Default: true"),
-      whatsappNotification:  z.boolean().optional().describe("WhatsApp notifications. Default: true"),
+      assessmentId:           z.string().describe("Assessment UUID"),
+      interviewType:          z.enum(["fixed", "dynamic", "coding", "verbal"]).optional().describe("Interview type — used to set correct fitScoreWeightAge and interviewTime defaults"),
+      availability:           z.enum(["flexi", "schedule"]).optional().describe("Default: flexi"),
+      assessmentConstraint:   z.enum(["NO_EXPIRY", "SET_DATE", "SET_RESPONSES_COUNT"]).optional().describe("Default: NO_EXPIRY"),
+      expiryDate:             z.string().optional().describe("ISO date, e.g. '2025-12-31' — required if constraint is SET_DATE"),
+      responseCount:          z.number().optional().describe("Max responses — required if constraint is SET_RESPONSES_COUNT"),
+      scheduleStart:          z.string().optional().describe("ISO datetime for schedule start — required if availability is schedule"),
+      scheduleEnd:            z.string().optional().describe("ISO datetime for schedule end — required if availability is schedule"),
+      interviewTime:          z.number().optional().describe("Override interview duration in seconds. If omitted, auto-calculated from questions (fixed/coding) and rounded to nearest slot: 600/900/1200/1500/3600"),
+      retakeAllowed:          z.boolean().optional().describe("Allow retakes. Default: true"),
+      candidateVideo:         z.boolean().optional().describe("Record candidate video. Default: true"),
+      enableScreenShare:      z.boolean().optional().describe("Enable screen sharing. Default: true"),
+      tabChangeDetection:     z.boolean().optional().describe("Flag tab switches. Default: false"),
+      faceDetection:          z.boolean().optional().describe("Flag face out of view. Default: false"),
+      multipleFaceDetection:  z.boolean().optional().describe("Flag multiple faces. Default: false"),
+      overallScoreVisible:    z.boolean().optional().describe("Show overall score to candidate. Default: false"),
+      individualScoreVisible: z.boolean().optional().describe("Show per-question score to candidate. Default: false"),
+      emailNotification:      z.boolean().optional().describe("Email notifications on completion. Default: true"),
+      whatsappNotification:   z.boolean().optional().describe("WhatsApp notifications. Default: true"),
       // Verbal (English Proficiency) only
-      qualificationCriteria: z.tuple([z.number(), z.number()]).optional()
+      qualificationCriteria:  z.tuple([z.number(), z.number()]).optional()
         .describe("Verbal only — pass score range [min, max]. Default: [76, 100]"),
       verbalWeightAge: z.object({
         mti:           z.number().optional().describe("Mean Turn Initiative. Default: 20"),
@@ -749,23 +620,12 @@ Assessment constraint (flexi only):
           ? [{ codeQuality: 50, problemSolving: 30, codeOptimization: 20 }]
           : [{ technicalScore: 50, communicationScore: 50 }];
 
-        // Rounds total question seconds UP to the nearest fixed slot
-        // Slots (from UI): 10min=600, 15min=900, 20min=1200, 25min=1500, 60min=3600
-        function roundToSlot(totalSeconds: number): number {
-          if (totalSeconds <= 600)  return 600;
-          if (totalSeconds <= 900)  return 900;
-          if (totalSeconds <= 1200) return 1200;
-          if (totalSeconds <= 1500) return 1500;
-          return 3600;
-        }
-
         let resolvedInterviewTime = interviewTime;
 
         if (!resolvedInterviewTime) {
           if (interviewType === "verbal") {
             resolvedInterviewTime = 240;
           } else if (isFixed) {
-            // Auto-calculate from question timeToAnswer values
             try {
               const qRes = await screenerClient.get(`/employer/assessment/questions/${employerId}`, {
                 params: { assessmentRefId: assessmentId },
@@ -777,14 +637,12 @@ Assessment constraint (flexi only):
               resolvedInterviewTime = 600;
             }
           } else if (isCoding) {
-            // Auto-calculate from coding question duration values (duration stored in MINUTES)
             try {
               const aRes = await screenerClient.get(`/employer/assessment/job-details/${assessmentId}`);
               const raw = aRes.data?.data;
               const assessment = Array.isArray(raw) ? raw[0] : raw;
               const codingQs: any[] = assessment?.HyringScreenerCodingQuestions ?? [];
               const totalMins = codingQs.reduce((sum: number, q: any) => sum + (q.duration ?? 0), 0);
-              // Convert minutes → seconds before rounding to slot
               resolvedInterviewTime = totalMins > 0 ? roundToSlot(totalMins * 60) : 600;
             } catch {
               resolvedInterviewTime = 600;
@@ -811,10 +669,8 @@ Assessment constraint (flexi only):
           isCandidateOverallScore:    overallScoreVisible    ?? false,
           isCandidateIndividualScore: individualScoreVisible ?? false,
           isCommunicationScore:       false,
-          // scheduleAssessment is always true per backend default
           scheduleAssessment:         true,
           aiModel:                    "CHATGPT",
-          // notification must be array of objects with id, child, email, slack, whatsapp
           notification: [{
             id:       employerId,
             child:    false,
@@ -824,8 +680,7 @@ Assessment constraint (flexi only):
           }],
           hiringStatusNotification: { email: true, whatsapp: true },
           fitScoreWeightAge,
-          // Verbal (English Proficiency) — VerbalWeightAge and qualificationCriteria
-          // must be sent via job-configuration, NOT create-verbal-context
+          // VerbalWeightAge and qualificationCriteria must go via job-configuration, NOT create-verbal-context
           ...(interviewType === "verbal" ? {
             VerbalWeightAge: [{
               mti:           verbalWeightAge?.mti           ?? 20,
@@ -883,7 +738,6 @@ Assessment constraint (flexi only):
         }
 
         const questions: any[] = data.hyringScreenerQuestions ?? data.questions ?? [];
-        const config = data;
 
         const lines = [
           `=== ASSESSMENT REVIEW ===`,
@@ -904,11 +758,11 @@ Assessment constraint (flexi only):
           ),
           ``,
           `--- Configuration ---`,
-          `Availability:  ${config.availability ?? "N/A"}`,
-          `Constraint:    ${config.assessmentConstraint ?? "N/A"}`,
-          `Interview Time: ${config.interviewTime ?? "N/A"}s`,
-          `Retake:        ${config.retakeAssessment ?? "N/A"}`,
-          `Candidate Video: ${config.candidateVideo ?? "N/A"}`,
+          `Availability:   ${data.availability ?? "N/A"}`,
+          `Constraint:     ${data.assessmentConstraint ?? "N/A"}`,
+          `Interview Time: ${data.interviewTime ?? "N/A"}s`,
+          `Retake:         ${data.retakeAssessment ?? "N/A"}`,
+          `Candidate Video:${data.candidateVideo ?? "N/A"}`,
         ];
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
@@ -950,42 +804,6 @@ Actions:
         };
 
         return { content: [{ type: "text" as const, text: messages[action] }] };
-      } catch (err) {
-        return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
-      }
-    }
-  );
-
-  // ── get_assessment_stats ──────────────────────────────────────────────────────
-  server.tool(
-    "get_assessment_stats",
-    "Returns overall statistics for an assessment: invited, attended, qualified, average score, etc.",
-    { assessmentId: z.string().describe("Assessment UUID") },
-    async ({ assessmentId }) => {
-      try {
-        requireAuth();
-        const res = await screenerClient.get(`/assessment/assessment-stats/${assessmentId}`);
-        const stats = res.data?.data ?? res.data;
-
-        if (!stats) {
-          return { content: [{ type: "text" as const, text: "No stats found for this assessment." }] };
-        }
-
-        const text = [
-          `=== Assessment Stats: ${assessmentId} ===`,
-          `Total Invited:  ${stats.totalInvited  ?? stats.invited  ?? "N/A"}`,
-          `Attended:       ${stats.attended       ?? "N/A"}`,
-          `Completed:      ${stats.completed      ?? "N/A"}`,
-          `Qualified:      ${stats.qualified      ?? "N/A"}`,
-          `Not Qualified:  ${stats.notQualified   ?? "N/A"}`,
-          `Declined:       ${stats.declined       ?? "N/A"}`,
-          `Scheduled:      ${stats.scheduled      ?? "N/A"}`,
-          `Retake Requests:${stats.retakeRequests ?? "N/A"}`,
-          `Average Score:  ${stats.averageScore   ?? "N/A"}`,
-          `Total Views:    ${stats.totalViews     ?? "N/A"}`,
-        ].join("\n");
-
-        return { content: [{ type: "text" as const, text }] };
       } catch (err) {
         return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
       }

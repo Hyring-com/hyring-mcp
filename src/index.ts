@@ -1,8 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerAuthTools } from "./tools/auth.tools";
-import { registerAssessmentTools } from "./tools/assessment.tools";
-import { registerCandidateTools } from "./tools/candidate.tools";
+import { registerAssessmentViewTools } from "./tools/assessment.view.tools";
+import { registerAssessmentBuildTools } from "./tools/assessment.build.tools";
+import { registerCandidateManageTools } from "./tools/candidate.manage.tools";
+import { registerCandidateResultsTools } from "./tools/candidate.results.tools";
 
 async function main() {
   const server = new McpServer({
@@ -12,8 +14,18 @@ async function main() {
   });
 
   registerAuthTools(server);
-  registerAssessmentTools(server);
-  registerCandidateTools(server);
+
+  // Assessment — view (list, get, stats)
+  registerAssessmentViewTools(server);
+
+  // Assessment — build (create, questions, context, configure, publish)
+  registerAssessmentBuildTools(server);
+
+  // Candidates — manage (list, invite, bulk invite, hiring stage, reminder)
+  registerCandidateManageTools(server);
+
+  // Candidates — results (result details, AI report)
+  registerCandidateResultsTools(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
