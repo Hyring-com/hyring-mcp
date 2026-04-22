@@ -2,35 +2,88 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { screenerClient, requireAuth, extractError } from "../api/screener.client";
 
-// ── Score helpers ──────────────────────────────────────────────────────────────
+// ── Score label helpers (match frontend communication-helper.js exactly) ──────
 
-function calcFixedFitScore(totalScore: number, commScore: number, weights: any): string {
-  if (!weights) return "N/A";
-  const tech = weights.technicalScore ?? 50;
-  const comm = weights.communicationScore ?? 50;
-  const fit = (totalScore * (tech / 100)) + (commScore * (comm / 100));
-  return fit.toFixed(1);
+/** Fit Score: 0-25=Weak Fit, 26-50=Moderate Fit, 51-75=Good Fit, 76+=Strong Fit */
+function getFitLabel(score: number): string {
+  if (score <= 25) return "WEAK FIT";
+  if (score <= 50) return "MODERATE FIT";
+  if (score <= 75) return "GOOD FIT";
+  return "STRONG FIT";
 }
 
-function calcCodingFitScore(scores: any, weights: any): string {
-  if (!weights || !scores) return "N/A";
-  const fit =
-    (scores.codeQuality    ?? 0) * ((weights.codeQuality    ?? 50) / 100) +
-    (scores.problemSolving ?? 0) * ((weights.problemSolving ?? 30) / 100) +
-    (scores.codeOptimization ?? 0) * ((weights.codeOptimization ?? 20) / 100);
-  return fit.toFixed(1);
+/** Technical/Communication % score: ≤30=Poor, ≤50=Below Avg., ≤70=Average, ≤90=Good, >90=Excellent */
+function getScoreLabel(score: number | string | null): string {
+  if (score == null || score === "N/A") return "N/A";
+  const n = parseFloat(String(score));
+  if (isNaN(n)) return "N/A";
+  if (n <= 30) return "POOR";
+  if (n <= 50) return "BELOW AVG.";
+  if (n <= 70) return "AVERAGE";
+  if (n <= 90) return "GOOD";
+  return "EXCELLENT";
 }
 
-function avgComm(sp: any): string {
-  if (!sp) return "N/A";
-  const vals = [sp.grammar, sp.fluency, sp.pronunciation, sp.vocabulary, sp.filler_words]
-    .filter((v) => v != null && !isNaN(v));
-  if (!vals.length) return "N/A";
-  return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+/** Per-question score (0–10 scale) → label */
+function getQuestionLabel(score: number | null | undefined): string {
+  if (score == null) return "Score Not Applicable";
+  switch (Math.round(score)) {
+    case 0:  return "Completely Incorrect";
+    case 1:  return "Very Poor";
+    case 2:  return "Poor";
+    case 3:  return "Weak";
+    case 4:  return "Below Average";
+    case 5:  return "Average";
+    case 6:  return "Fair";
+    case 7:  return "Good";
+    case 8:  return "Very Good";
+    case 9:  return "Excellent";
+    case 10: return "Perfect";
+    default: return "Score Not Applicable";
+  }
+}
+
+/** Format fit score line: "38% — MODERATE FIT" */
+function fitLine(score: number | null): string {
+  if (score == null || isNaN(score)) return "N/A";
+  const pct = Math.round(score);
+  return `${pct}% — ${getFitLabel(pct)}`;
+}
+
+/** Format score line: "37% — BELOW AVG." */
+function scoreLine(score: number | string | null): string {
+  if (score == null || score === "N/A") return "N/A";
+  const n = parseFloat(String(score));
+  if (isNaN(n)) return "N/A";
+  return `${Math.round(n)}% — ${getScoreLabel(n)}`;
 }
 
 function na(v: any): string {
-  return v != null ? String(v) : "N/A";
+  return v != null && v !== "" ? String(v) : "N/A";
+}
+
+/** Parse AI summary: JSON array → bullet list, or plain string */
+function formatAISummary(summary: any): string {
+  if (!summary) return "N/A";
+  if (Array.isArray(summary)) {
+    return summary.map((s: any, i: number) => `  ${i + 1}. ${s}`).join("\n");
+  }
+  if (typeof summary === "string") {
+    try {
+      const parsed = JSON.parse(summary);
+      if (Array.isArray(parsed)) {
+        return parsed.map((s: any, i: number) => `  ${i + 1}. ${s}`).join("\n");
+      }
+    } catch { /* not JSON */ }
+    return summary.trim() || "N/A";
+  }
+  return JSON.stringify(summary);
+}
+
+/** Normalize 0-to-(totalAnswered×10) raw sum → 0-100% */
+function normalizeEngScore(raw: number, totalAnswered: number): number {
+  if (!totalAnswered) return 0;
+  return Math.round((raw / (totalAnswered * 10)) * 100);
 }
 
 export function registerCandidateResultsTools(server: McpServer) {
@@ -54,7 +107,6 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
 
         if (interviewType === "verbal") {
           // Verbal attended — tuple: [assessmentData, topFive, filteredResponses, total_count, ...]
-          // Candidates at index [2]
           const res = await screenerClient.get(`/assessment/verbal/attended/${assessmentId}`);
           const raw = res.data?.data;
           if (Array.isArray(raw)) {
@@ -62,8 +114,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
             candidates = Array.isArray(slot2) ? slot2 : [];
           }
         } else {
-          // /assessment/view/attended/seekers/:id — confirmed FLAT ARRAY (not tuple)
-          // Each item: { id, batch, assessmentId, seekerId, seekerCat: { firstName, lastName, email, ... } }
+          // /assessment/view/attended/seekers/:id — flat array (not tuple)
           const res = await screenerClient.get(`/assessment/view/attended/seekers/${assessmentId}`);
           const raw = res.data?.data ?? res.data;
           candidates = Array.isArray(raw) ? raw : [];
@@ -78,7 +129,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           const name     = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A";
           const email    = seeker.email ?? c.email ?? "N/A";
           const seekerId = c.seekerId ?? seeker.seekerId ?? "N/A";
-          const statusId = c.id ?? c.statusId ?? "N/A"; // HyringScreenerStatus.id — needed for verbal report
+          const statusId = c.id ?? c.statusId ?? "N/A";
           const batch    = c.batch ?? 1;
           const stage    = c.hiringStage ?? "N/A";
           const score    = c.totalScore  ?? "N/A";
@@ -109,7 +160,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   // ── get_fixed_report ───────────────────────────────────────────────────────
   server.tool(
     "get_fixed_report",
-    "Returns the full report for a One-Way (fixed) interview candidate: scores, per-question breakdown, communication analysis, and proctoring.",
+    "Returns the full report for a One-Way (fixed) interview candidate: fit score, technical & communication scores with labels, per-question breakdown with transcripts, AI summary, and candidate info.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.number().describe("Candidate seekerId from list_attended_candidates"),
@@ -122,87 +173,154 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const res = await screenerClient.post("/assessment/result", {
           seekerId,
           assessmentId,
-          batch: batch ?? 1,   // default 1 — null causes backend to find no rows
+          batch: batch ?? 1,
         });
 
-        // Response: { data: [result, sentiment, result_stats, english_score, final_score] }
-        const raw: any[] = res.data?.data ?? [];
-        const r          = Array.isArray(raw) ? raw[0] : raw;   // main result object
-        const finalScore = Array.isArray(raw) ? raw[4] : null;  // final calculated score (string/number)
+        // Response tuple: [result, sentiment, result_stats, english_score, final_score]
+        const raw: any[]  = res.data?.data ?? [];
+        const r           = Array.isArray(raw) ? raw[0] : raw;    // main result object
+        const resultStats = Array.isArray(raw) ? raw[2] : null;   // { _count: answeredCount }
+        const engScoreAgg = Array.isArray(raw) ? raw[3] : null;   // aggregate english scores (raw sums)
+        const techScore   = Array.isArray(raw) ? raw[4] : null;   // final/technical score % (pre-calculated)
 
         if (!r) {
           return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
         }
 
-        const assessment  = r.hyringScreenerAssessment ?? {};
-        const seeker      = r.seekerCat ?? {};
-        const weights     = assessment.fitScoreWeightAge?.[0] ?? {};
-        const videoResult = assessment.HyringScreenerVideoAnalysisResult?.[0] ?? {};
-        const speech      = videoResult.videoAnalysis?.speech_proficiency ?? {};
-        const batchNum    = (batch ?? 1) - 1;
-        const engScores   = seeker.HyringScreenerResult?.[batchNum] ?? {};
+        const assessment   = r.hyringScreenerAssessment ?? {};
+        const seeker       = r.seekerCat ?? {};
+        const weights      = assessment.fitScoreWeightAge?.[0] ?? {};
+        const videoResult  = assessment.HyringScreenerVideoAnalysisResult?.[0] ?? {};
+        const speech       = videoResult.videoAnalysis?.speech_proficiency ?? {};
+        const batchNum     = (batch ?? 1) - 1;
         const questions: any[] = assessment.hyringScreenerQuestions ?? [];
-        const resultStats   = Array.isArray(raw) ? raw[2] : null;
-        const answeredCount = resultStats?._count ?? resultStats ?? "N/A";
+        const answeredCount = resultStats?._count ?? questions.length;
 
-        // Communication scores: prefer video analysis, fallback to english_score fields
-        const grammar      = speech.grammar       ?? engScores.english_score        ?? "N/A";
-        const fluency      = speech.fluency       ?? engScores.english_fluency      ?? "N/A";
-        const pronunciation = speech.pronunciation ?? engScores.english_pronunciation ?? "N/A";
-        const vocabulary   = speech.vocabulary    ?? engScores.english_vocabulary   ?? "N/A";
-        const filler       = speech.filler_words  ?? engScores.english_filler_words ?? "N/A";
+        // ── Communication scores ─────────────────────────────────────────────
+        // raw[3] has aggregate raw sums (english_pronunciation etc.) from per-question scoring
+        // Normalize: (rawSum / (answeredCount × 10)) × 100
+        const hasEngAgg = engScoreAgg && (
+          engScoreAgg.english_pronunciation != null ||
+          engScoreAgg.english_score != null ||
+          engScoreAgg.english_fluency != null
+        );
 
-        const commAvg = avgComm(speech) !== "N/A" ? avgComm(speech) : "N/A";
-        const fitScore = calcFixedFitScore(r.totalScore ?? 0, parseFloat(commAvg) || 0, weights);
+        let pronPct: number, gramPct: number, vocabPct: number, fillerPct: number, fluencyPct: number;
 
-        // Per-question breakdown
+        if (hasEngAgg && answeredCount > 0) {
+          pronPct   = normalizeEngScore(engScoreAgg.english_pronunciation ?? 0, answeredCount);
+          gramPct   = normalizeEngScore(engScoreAgg.english_score         ?? 0, answeredCount);
+          vocabPct  = normalizeEngScore(engScoreAgg.english_vocabulary    ?? 0, answeredCount);
+          fillerPct = normalizeEngScore(engScoreAgg.english_filler_words  ?? 0, answeredCount);
+          fluencyPct = normalizeEngScore(engScoreAgg.english_fluency      ?? 0, answeredCount);
+        } else {
+          // Fallback: speech_proficiency from video analysis (already normalized 0-100)
+          const s2p = (v: any) => v != null ? Math.round(parseFloat(String(v))) : 0;
+          pronPct    = s2p(speech.pronunciation);
+          gramPct    = s2p(speech.grammar);
+          vocabPct   = s2p(speech.vocabulary);
+          fillerPct  = s2p(speech.filler_words);
+          fluencyPct = s2p(speech.fluency);
+        }
+
+        const commAvgPct = Math.round((pronPct + gramPct + vocabPct + fillerPct + fluencyPct) / 5);
+
+        // ── Fit Score ────────────────────────────────────────────────────────
+        const techPct    = techScore != null ? parseFloat(String(techScore)) : (r.totalScore ?? 0);
+        const wTech      = weights.technicalScore     ?? 50;
+        const wComm      = weights.communicationScore ?? 50;
+        const fitPct     = Math.round(techPct * (wTech / 100) + commAvgPct * (wComm / 100));
+
+        // ── AI Summary ───────────────────────────────────────────────────────
+        const aiSummary = formatAISummary(r.ai_summary);
+
+        // ── Candidate info from end questions ────────────────────────────────
+        const endQ       = r.end_questions?.[batchNum] ?? {};
+        const feedback   = seeker.hyringScreenerInterviewFeedback?.[batchNum] ?? {};
+        const workExpYr  = endQ.workExperienceYears  ?? null;
+        const workExpMo  = endQ.workExperienceMonths ?? null;
+        const currSalary = endQ.currentSalary  ?? null;
+        const expSalary  = endQ.expectedSalary ?? null;
+        const currency   = endQ.currency ?? assessment.currency ?? "";
+        const joiningDate = endQ.expectedJoiningDate ?? null;
+        const rating     = feedback.organizationRating ?? null;
+        const feedbackText = feedback.organizationFeedback ?? null;
+
+        // ── Accent ───────────────────────────────────────────────────────────
+        const accent = videoResult.videoAnalysis?.accent_analysis;
+        const accentText = accent
+          ? (typeof accent === "object"
+              ? `${accent.detected_accent ?? ""} (${accent.country_code ?? ""})`.trim()
+              : String(accent))
+          : "N/A";
+
+        // ── Per-question breakdown ────────────────────────────────────────────
         const qLines = questions.map((q: any, i: number) => {
-          const ans = q.HyringScreenerAnswers?.[batchNum] ?? q;
+          const ans = q.HyringScreenerAnswers?.[batchNum] ?? {};
+          const score   = ans.score   ?? q.score;
+          const isApplicable = ans.isScoreApplicable ?? true;
+          const label = !isApplicable ? "Score Not Applicable" : getQuestionLabel(score);
+          const actualScore = ans.isOverwritten && ans.overWrittenScore != null
+            ? ans.overWrittenScore
+            : score;
+          const transcript = ans.transcript ?? q.transcript ?? "";
           return [
             `  Q${i + 1}: ${q.question ?? "N/A"}`,
-            `  Type: ${q.questionType ?? "N/A"} | Answer: ${q.answerType ?? "N/A"} | Time: ${q.timeToAnswer ?? "N/A"}s`,
-            `  Score: ${na(ans.score ?? q.score)} | English Score: ${na(ans.english_score ?? q.english_score)}`,
-            ans.transcript ? `  Transcript: "${String(ans.transcript).slice(0, 180)}..."` : "",
+            `  Type: ${q.questionType ?? "N/A"} | Answer: ${q.answerType ?? "N/A"} | Time: ${na(q.timeToAnswer)}s`,
+            `  Score: ${actualScore != null ? actualScore + "/10" : "N/A"} — ${label}`,
+            transcript ? `  Transcript: "${String(transcript).slice(0, 300)}${String(transcript).length > 300 ? "…" : ""}"` : "",
           ].filter(Boolean).join("\n");
         });
 
         const lines = [
-          `=== ONE-WAY INTERVIEW REPORT ===`,
-          `Assessment: ${assessmentId}`,
-          `Job Title:  ${na(assessment.jobTitle)}`,
+          `╔══════════════════════════════════════╗`,
+          `║      ONE-WAY INTERVIEW REPORT        ║`,
+          `╚══════════════════════════════════════╝`,
+          `Assessment : ${assessmentId}`,
+          `Job Title  : ${na(assessment.jobTitle)}`,
           ``,
-          `--- Candidate ---`,
-          `Name:         ${[seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A"}`,
-          `Email:        ${na(seeker.email)}`,
-          `SeekerId:     ${na(seekerId)}`,
-          `Batch:        ${batch ?? 1}`,
-          `Status:       ${na(r.assessmentStatus)}`,
-          `Hiring Stage: ${na(r.hiringStage)}`,
-          `Date:         ${na(r.createdAt)}`,
+          `┌─ CANDIDATE ────────────────────────────`,
+          `  Name         : ${[seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A"}`,
+          `  Email        : ${na(seeker.email)}`,
+          `  SeekerId     : ${na(seekerId)}`,
+          `  Batch        : ${batch ?? 1}`,
+          `  Status       : ${na(r.assessmentStatus)}`,
+          `  Hiring Stage : ${na(r.hiringStage)}`,
+          `  Date         : ${na(r.createdAt)}`,
+          workExpYr != null || workExpMo != null
+            ? `  Experience   : ${workExpYr ?? 0} yr ${workExpMo ?? 0} mo`
+            : "",
+          currSalary != null ? `  Current Salary  : ${currency}${currSalary}` : "",
+          expSalary  != null ? `  Expected Salary : ${currency}${expSalary}` : "",
+          joiningDate        ? `  Joining Date    : ${joiningDate}` : "",
+          rating != null     ? `  Interview Rating: ${"★".repeat(Math.round(rating))} (${rating}/5)` : "",
+          feedbackText       ? `  Feedback        : "${feedbackText}"` : "",
           ``,
-          `--- Scores ---`,
-          `Overall Score:        ${na(r.totalScore)}`,
-          `Final Score:          ${na(finalScore)}`,
-          `Fit Score:            ${fitScore}`,
-          `  Weights → Technical: ${na(weights.technicalScore)}% | Communication: ${na(weights.communicationScore)}%`,
-          `Questions Answered:   ${answeredCount} / ${questions.length}`,
+          `┌─ SCORES ───────────────────────────────`,
+          `  Technical Score   : ${scoreLine(techPct)}`,
+          `  Fit Score         : ${fitLine(fitPct)}`,
+          `    └ Weights → Technical: ${wTech}% | Communication: ${wComm}%`,
+          `  Questions Answered: ${answeredCount} / ${questions.length}`,
           ``,
-          `--- Communication Breakdown ---`,
-          `Grammar:       ${na(grammar)}`,
-          `Fluency:       ${na(fluency)}`,
-          `Pronunciation: ${na(pronunciation)}`,
-          `Vocabulary:    ${na(vocabulary)}`,
-          `Filler Words:  ${na(filler)}`,
-          `Average:       ${commAvg}`,
+          `┌─ COMMUNICATION BREAKDOWN ──────────────`,
+          `  Pronunciation      : ${pronPct}%  — ${getScoreLabel(pronPct)}`,
+          `  Grammar            : ${gramPct}%  — ${getScoreLabel(gramPct)}`,
+          `  Vocabulary         : ${vocabPct}%  — ${getScoreLabel(vocabPct)}`,
+          `  Fluency            : ${fluencyPct}%  — ${getScoreLabel(fluencyPct)}`,
+          `  Minimal Filler Words: ${fillerPct}% — ${getScoreLabel(fillerPct)}`,
+          `  Overall Comm Avg   : ${commAvgPct}% — ${getScoreLabel(commAvgPct)}`,
+          `  Accent             : ${accentText}`,
           ``,
-          `--- Proctoring ---`,
-          `Video Link:       ${na(videoResult.video_link)}`,
-          `Video Available:  ${videoResult.isVideoDeleted ? "No (deleted)" : videoResult.video_link ? "Yes" : "N/A"}`,
-          `Accent Analysis:  ${na(videoResult.videoAnalysis?.accent_analysis)}`,
+          `┌─ AI SUMMARY ───────────────────────────`,
+          aiSummary,
           ``,
-          `--- Questions (${questions.length}) ---`,
-          ...qLines,
-        ];
+          `┌─ MEDIA ─────────────────────────────────`,
+          `  Video Available: ${videoResult.isVideoDeleted ? "No (deleted)" : videoResult.video_link ? "Yes" : "N/A"}`,
+          videoResult.video_link ? `  Video Link     : ${videoResult.video_link}` : "",
+          ``,
+          `┌─ INTERVIEW QUESTIONS (${questions.length}) ─────────────`,
+          ...qLines.map((q: string) => q + "\n"),
+        ].filter((l: string) => l !== "");
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       } catch (err) {
@@ -214,7 +332,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   // ── get_dynamic_report ─────────────────────────────────────────────────────
   server.tool(
     "get_dynamic_report",
-    "Returns the full report for a Two-Way (dynamic AI) interview candidate: scores, per-skill conversation Q&A, communication analysis.",
+    "Returns the full report for a Two-Way (dynamic AI) interview candidate: fit score, technical & communication scores with labels, per-skill conversation Q&A with transcripts, AI summary.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.string().describe("Candidate seekerId from list_attended_candidates"),
@@ -224,7 +342,6 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
       try {
         requireAuth();
 
-        // seekerBaseUrl = baseUrl + /seeker — same client, just /seeker prefix on path
         const res = await screenerClient.post("/seeker/dynamic-interview/context-result", {
           seekerId,
           assessmentId,
@@ -232,85 +349,156 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         });
 
         // Backend returns: { status: true, message: "ok", data: result }
-        // So res.data.data = the twoWayInterviewResult object directly
         const r = res.data?.data ?? res.data;
 
         if (!r) {
           return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
         }
 
-        const assessment   = r.hyringScreenerAssessment ?? {};
-        const seeker       = r.seekerCat ?? {};
-        const weights      = assessment.fitScoreWeightAge?.[0] ?? {};
-        const contextResult = assessment.hyringScreenerContextResult?.[0] ?? {};
-        const context0     = contextResult.context_result?.[0] ?? {};
-        const speech       = contextResult.videoAnalysis?.speech_proficiency ?? context0.english_score ?? {};
+        const assessment     = r.hyringScreenerAssessment ?? {};
+        const seeker         = r.seekerCat ?? {};
+        const weights        = assessment.fitScoreWeightAge?.[0] ?? {};
+        const contextResult  = assessment.hyringScreenerContextResult?.[0] ?? {};
+        const context0       = contextResult.context_result?.[0] ?? {};
+        const batchNum       = (batch ?? 1) - 1;
+
+        // ── Communication scores ─────────────────────────────────────────────
+        // Two-way: english_score in context_result has pronunciation_score, grammar_score etc. (0-10)
+        // Percentage = value × 10  (same as transformDataVapiIntelligence)
+        const langScore = context0.english_score ?? contextResult.videoAnalysis?.speech_proficiency ?? {};
+
+        const toCommPct = (v: any) => v != null ? Math.round(parseFloat(String(v)) * 10) : 0;
+        const pronPct    = toCommPct(langScore.pronunciation_score ?? langScore.pronunciation);
+        const gramPct    = toCommPct(langScore.grammar_score       ?? langScore.grammar);
+        const vocabPct   = toCommPct(langScore.vocabulary_score    ?? langScore.vocabulary);
+        const fillerPct  = toCommPct(langScore.filler_score        ?? langScore.filler_words);
+        const fluencyPct = toCommPct(langScore.fluency_score       ?? langScore.fluency);
+        const commAvgPct = Math.round((pronPct + gramPct + vocabPct + fillerPct + fluencyPct) / 5);
+
+        // ── Fit Score ────────────────────────────────────────────────────────
+        const techPct = r.totalScore ?? 0;
+        const wTech   = weights.technicalScore     ?? 50;
+        const wComm   = weights.communicationScore ?? 50;
+        const fitPct  = Math.round(techPct * (wTech / 100) + commAvgPct * (wComm / 100));
+
+        // ── AI Summary ───────────────────────────────────────────────────────
+        const aiSummary = formatAISummary(assessment.ai_summary ?? r.ai_summary);
+
+        // ── Candidate info from end questions ────────────────────────────────
+        const endQ       = r.end_questions?.[batchNum] ?? {};
+        const feedback   = seeker.hyringScreenerInterviewFeedback?.[batchNum] ?? {};
+        const workExpYr  = endQ.workExperienceYears  ?? null;
+        const workExpMo  = endQ.workExperienceMonths ?? null;
+        const currSalary = endQ.currentSalary  ?? null;
+        const expSalary  = endQ.expectedSalary ?? null;
+        const currency   = endQ.currency ?? "";
+        const joiningDate = endQ.expectedJoiningDate ?? null;
+        const rating     = feedback.organizationRating ?? null;
+        const feedbackText = feedback.organizationFeedback ?? null;
+
+        // ── Accent ───────────────────────────────────────────────────────────
+        const accent = contextResult.videoAnalysis?.accent_analysis;
+        const accentText = accent
+          ? (typeof accent === "object"
+              ? `${accent.detected_accent ?? ""} (${accent.country_code ?? ""})`.trim()
+              : String(accent))
+          : "N/A";
+
+        // ── Conversation Q&A grouped by skill ────────────────────────────────
         const conversation: any[] = context0.conversation ?? [];
         const skillContexts: any[] = assessment.HyringScreenerContext ?? [];
 
-        const commAvg = avgComm(speech);
-        const fitScore = calcFixedFitScore(r.totalScore ?? 0, parseFloat(commAvg) || 0, weights);
-
-        // Group conversation by skill context
-        const skillLines: string[] = [];
-        if (skillContexts.length) {
+        const convLines: string[] = [];
+        if (skillContexts.length && conversation.length) {
           skillContexts.forEach((ctx: any, si: number) => {
-            skillLines.push(`  Skill ${si + 1}: ${ctx.skill ?? "N/A"} (${ctx.level ?? "N/A"})`);
-            const related = conversation.filter((c: any) => c.skill === ctx.skill || c.contextId === ctx.id);
+            convLines.push(`  ▸ Skill ${si + 1}: ${ctx.skill ?? "N/A"} (${ctx.level ?? "N/A"})`);
+            const related = conversation.filter(
+              (c: any) => c.skill === ctx.skill || c.contextId === ctx.id
+            );
             if (related.length) {
               related.forEach((c: any, ci: number) => {
-                skillLines.push(`    Q${ci + 1}: ${c.question ?? "N/A"}`);
-                skillLines.push(`    A: ${c.answer ? String(c.answer).slice(0, 200) : "N/A"}`);
-                skillLines.push(`    Score: ${na(c.score ?? c.overWrittenScore)}`);
+                const score = c.isOverwritten && c.overWrittenScore != null
+                  ? c.overWrittenScore
+                  : c.score;
+                const isApplicable = c.score_applicable !== false;
+                const label = !isApplicable ? "Score Not Applicable" : getQuestionLabel(score);
+                convLines.push(`    Q${ci + 1}: ${c.question ?? "N/A"}`);
+                convLines.push(`    Score: ${score != null ? score + "/10" : "N/A"} — ${label}`);
+                if (c.answer) {
+                  const ans = String(c.answer);
+                  convLines.push(`    Answer: "${ans.slice(0, 300)}${ans.length > 300 ? "…" : ""}"`);
+                }
+                convLines.push("");
               });
+            } else {
+              convLines.push("    (no questions recorded for this skill)");
+              convLines.push("");
             }
           });
         } else {
-          // No skill context map — just dump conversation
-          conversation.slice(0, 20).forEach((c: any, ci: number) => {
-            skillLines.push(`  Q${ci + 1}: ${c.question ?? "N/A"}`);
-            skillLines.push(`  A: ${c.answer ? String(c.answer).slice(0, 200) : "N/A"}`);
-            skillLines.push(`  Score: ${na(c.score ?? c.overWrittenScore)}`);
-            skillLines.push(``);
+          conversation.slice(0, 30).forEach((c: any, ci: number) => {
+            const score = c.isOverwritten && c.overWrittenScore != null ? c.overWrittenScore : c.score;
+            const isApplicable = c.score_applicable !== false;
+            const label = !isApplicable ? "Score Not Applicable" : getQuestionLabel(score);
+            convLines.push(`  Q${ci + 1}: ${c.question ?? "N/A"}`);
+            convLines.push(`  Score: ${score != null ? score + "/10" : "N/A"} — ${label}`);
+            if (c.answer) {
+              const ans = String(c.answer);
+              convLines.push(`  Answer: "${ans.slice(0, 300)}${ans.length > 300 ? "…" : ""}"`);
+            }
+            convLines.push("");
           });
         }
 
         const lines = [
-          `=== TWO-WAY INTERVIEW REPORT ===`,
-          `Assessment: ${assessmentId}`,
-          `Job Title:  ${na(assessment.jobTitle)}`,
+          `╔══════════════════════════════════════╗`,
+          `║      TWO-WAY INTERVIEW REPORT        ║`,
+          `╚══════════════════════════════════════╝`,
+          `Assessment : ${assessmentId}`,
+          `Job Title  : ${na(assessment.jobTitle)}`,
           ``,
-          `--- Candidate ---`,
-          `Name:         ${[seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A"}`,
-          `Email:        ${na(seeker.email)}`,
-          `SeekerId:     ${na(seekerId)}`,
-          `Batch:        ${batch ?? 1}`,
-          `Status:       ${na(r.assessmentStatus)}`,
-          `Hiring Stage: ${na(r.hiringStage)}`,
-          `Date:         ${na(r.createdAt)}`,
+          `┌─ CANDIDATE ────────────────────────────`,
+          `  Name         : ${[seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A"}`,
+          `  Email        : ${na(seeker.email)}`,
+          `  SeekerId     : ${na(seekerId)}`,
+          `  Batch        : ${batch ?? 1}`,
+          `  Status       : ${na(r.assessmentStatus)}`,
+          `  Hiring Stage : ${na(r.hiringStage)}`,
+          `  Date         : ${na(r.createdAt)}`,
+          workExpYr != null || workExpMo != null
+            ? `  Experience   : ${workExpYr ?? 0} yr ${workExpMo ?? 0} mo`
+            : "",
+          currSalary != null ? `  Current Salary  : ${currency}${currSalary}` : "",
+          expSalary  != null ? `  Expected Salary : ${currency}${expSalary}` : "",
+          joiningDate        ? `  Joining Date    : ${joiningDate}` : "",
+          rating != null     ? `  Interview Rating: ${"★".repeat(Math.round(rating))} (${rating}/5)` : "",
+          feedbackText       ? `  Feedback        : "${feedbackText}"` : "",
           ``,
-          `--- Scores ---`,
-          `Overall Score:  ${na(r.totalScore)}`,
-          `Fit Score:      ${fitScore}`,
-          `  Weights → Technical: ${na(weights.technicalScore)}% | Communication: ${na(weights.communicationScore)}%`,
+          `┌─ SCORES ───────────────────────────────`,
+          `  Technical Score : ${scoreLine(techPct)}`,
+          `  Fit Score       : ${fitLine(fitPct)}`,
+          `    └ Weights → Technical: ${wTech}% | Communication: ${wComm}%`,
           ``,
-          `--- Communication Breakdown ---`,
-          `Grammar:       ${na(speech.grammar)}`,
-          `Fluency:       ${na(speech.fluency)}`,
-          `Pronunciation: ${na(speech.pronunciation)}`,
-          `Vocabulary:    ${na(speech.vocabulary)}`,
-          `Filler Words:  ${na(speech.filler_words)}`,
-          `Average:       ${commAvg}`,
+          `┌─ COMMUNICATION BREAKDOWN ──────────────`,
+          `  Pronunciation      : ${pronPct}%  — ${getScoreLabel(pronPct)}`,
+          `  Grammar            : ${gramPct}%  — ${getScoreLabel(gramPct)}`,
+          `  Vocabulary         : ${vocabPct}%  — ${getScoreLabel(vocabPct)}`,
+          `  Fluency            : ${fluencyPct}%  — ${getScoreLabel(fluencyPct)}`,
+          `  Minimal Filler Words: ${fillerPct}% — ${getScoreLabel(fillerPct)}`,
+          `  Overall Comm Avg   : ${commAvgPct}% — ${getScoreLabel(commAvgPct)}`,
+          `  Accent             : ${accentText}`,
           ``,
-          `--- Media ---`,
-          `Video Link:       ${na(contextResult.video_link)}`,
-          `Screen Share:     ${na(contextResult.screen_link)}`,
-          `Video Available:  ${contextResult.isVideoDeleted ? "No (deleted)" : contextResult.video_link ? "Yes" : "N/A"}`,
-          `Accent Analysis:  ${na(contextResult.videoAnalysis?.accent_analysis)}`,
+          `┌─ AI SUMMARY ───────────────────────────`,
+          aiSummary,
           ``,
-          `--- Conversation (${conversation.length} exchanges) ---`,
-          ...skillLines,
-        ];
+          `┌─ MEDIA ─────────────────────────────────`,
+          `  Video Available: ${contextResult.isVideoDeleted ? "No (deleted)" : contextResult.video_link ? "Yes" : "N/A"}`,
+          contextResult.video_link ? `  Video Link     : ${contextResult.video_link}` : "",
+          contextResult.screen_link ? `  Screen Share   : ${contextResult.screen_link}` : "",
+          ``,
+          `┌─ INTERVIEW CONVERSATION (${conversation.length} exchanges) ──`,
+          ...convLines,
+        ].filter((l: string) => l !== "");
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       } catch (err) {
@@ -322,7 +510,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   // ── get_coding_report ──────────────────────────────────────────────────────
   server.tool(
     "get_coding_report",
-    "Returns the full report for a Coding interview candidate: fit score breakdown (code quality, problem solving, optimization), per-question results.",
+    "Returns the full report for a Coding interview candidate: fit score with label, code quality / problem solving / optimization breakdown, per-question results with labels.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.number().describe("Candidate seekerId from list_attended_candidates"),
@@ -338,82 +526,116 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           batch: batch ?? 1,
         });
 
-        // Response: { data: [result, [], result_stats, sums, final_score] }
-        const raw: any[] = res.data?.data ?? [];
-        const r          = Array.isArray(raw) ? raw[0] : raw;    // main result
-        const sums       = Array.isArray(raw) ? raw[3] : null;   // { codeQuality, problemSolving, codeOptimization, score }
-        const finalScore = Array.isArray(raw) ? raw[4] : null;   // final score breakdown
+        // Response tuple: [result, [], result_stats, sums, final_score]
+        const raw: any[]  = res.data?.data ?? [];
+        const r           = Array.isArray(raw) ? raw[0] : raw;   // main result
+        const resultStats = Array.isArray(raw) ? raw[2] : null;  // { _count }
+        const sums        = Array.isArray(raw) ? raw[3] : null;  // { codeQuality, problemSolving, codeOptimization, score }
+        const finalScore  = Array.isArray(raw) ? raw[4] : null;  // final score breakdown
 
         if (!r) {
           return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
         }
 
-        const assessment    = r.hyringScreenerAssessment ?? {};
-        const seeker        = r.seekerCat ?? {};
-        const weights       = assessment.fitScoreWeightAge?.[0] ?? {};
-        const videoResult   = assessment.HyringScreenerVideoAnalysisResult?.[0] ?? {};
+        const assessment   = r.hyringScreenerAssessment ?? {};
+        const seeker       = r.seekerCat ?? {};
+        const weights      = assessment.fitScoreWeightAge?.[0] ?? {};
+        const videoResult  = assessment.HyringScreenerVideoAnalysisResult?.[0] ?? {};
         const codingQs: any[] = assessment.HyringScreenerCodingQuestions ?? [];
-        const resultStats   = Array.isArray(raw) ? raw[2] : null;
-        const answeredCount = resultStats?._count ?? resultStats ?? "N/A";
+        const batchNum     = (batch ?? 1) - 1;
+        const answeredCount = resultStats?._count ?? codingQs.length;
 
-        // Use aggregate sums from raw[3] directly (backend pre-calculates these)
-        const aggCQ  = sums?.codeQuality     ?? sums?.code_quality     ?? null;
-        const aggPS  = sums?.problemSolving  ?? sums?.problem_solving  ?? null;
+        // ── Aggregate scores (pre-calculated by backend in raw[3]) ────────────
+        const aggCQ  = sums?.codeQuality      ?? sums?.code_quality      ?? null;
+        const aggPS  = sums?.problemSolving   ?? sums?.problem_solving   ?? null;
         const aggCO  = sums?.codeOptimization ?? sums?.code_optimization ?? null;
-        const fitScore = calcCodingFitScore(
-          { codeQuality: aggCQ ?? 0, problemSolving: aggPS ?? 0, codeOptimization: aggCO ?? 0 },
-          weights,
-        );
 
-        // Per-question breakdown
-        const batchNum = (batch ?? 1) - 1;
+        const wCQ  = weights.codeQuality      ?? 50;
+        const wPS  = weights.problemSolving   ?? 30;
+        const wCO  = weights.codeOptimization ?? 20;
+
+        const fitPct = aggCQ != null && aggPS != null && aggCO != null
+          ? Math.round(aggCQ * (wCQ / 100) + aggPS * (wPS / 100) + aggCO * (wCO / 100))
+          : null;
+
+        // ── AI Summary ───────────────────────────────────────────────────────
+        const aiSummary = formatAISummary(r.ai_summary ?? assessment.ai_summary);
+
+        // ── Candidate info ────────────────────────────────────────────────────
+        const endQ       = r.end_questions?.[batchNum] ?? {};
+        const feedback   = seeker.hyringScreenerInterviewFeedback?.[batchNum] ?? {};
+        const workExpYr  = endQ.workExperienceYears  ?? null;
+        const workExpMo  = endQ.workExperienceMonths ?? null;
+        const currSalary = endQ.currentSalary  ?? null;
+        const expSalary  = endQ.expectedSalary ?? null;
+        const currency   = endQ.currency ?? "";
+        const joiningDate = endQ.expectedJoiningDate ?? null;
+        const rating     = feedback.organizationRating ?? null;
+        const feedbackText = feedback.organizationFeedback ?? null;
+
+        // ── Per-question breakdown ────────────────────────────────────────────
         const qLines = codingQs.map((q: any, i: number) => {
           const ans = q.HyringScreenerCodingAnswers?.[batchNum] ?? q.answers?.[batchNum] ?? {};
-          const cq  = ans.codeQuality     ?? q.codeQuality     ?? null;
-          const ps  = ans.problemSolving  ?? q.problemSolving  ?? null;
+          const cq  = ans.codeQuality      ?? q.codeQuality      ?? null;
+          const ps  = ans.problemSolving   ?? q.problemSolving   ?? null;
           const co  = ans.codeOptimization ?? q.codeOptimization ?? null;
+          const labelFor = (v: number | null) => v != null ? `${v}% — ${getScoreLabel(v)}` : "N/A";
+          const code = ans.code ?? ans.solution ?? "";
           return [
             `  Q${i + 1}: ${q.question ?? q.concept ?? "N/A"}`,
             `  Type: ${q.codingType ?? "N/A"} | Exercise: ${q.questionType ?? "N/A"} | Duration: ${na(q.duration)} min | Lang: ${na(q.language)}`,
-            `  Code Quality: ${na(cq)} | Problem Solving: ${na(ps)} | Optimization: ${na(co)}`,
-          ].join("\n");
+            `  Code Quality     : ${labelFor(cq)}`,
+            `  Problem Solving  : ${labelFor(ps)}`,
+            `  Optimization     : ${labelFor(co)}`,
+            code ? `  Submitted Code   :\n${"    " + String(code).split("\n").slice(0, 20).join("\n    ")}` : "",
+          ].filter(Boolean).join("\n");
         });
 
-        const avgCQ = na(aggCQ);
-        const avgPS = na(aggPS);
-        const avgCO = na(aggCO);
-
         const lines = [
-          `=== CODING INTERVIEW REPORT ===`,
-          `Assessment: ${assessmentId}`,
-          `Job Title:  ${na(assessment.jobTitle)}`,
+          `╔══════════════════════════════════════╗`,
+          `║       CODING INTERVIEW REPORT        ║`,
+          `╚══════════════════════════════════════╝`,
+          `Assessment : ${assessmentId}`,
+          `Job Title  : ${na(assessment.jobTitle)}`,
           ``,
-          `--- Candidate ---`,
-          `Name:         ${[seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A"}`,
-          `Email:        ${na(seeker.email)}`,
-          `SeekerId:     ${na(seekerId)}`,
-          `Batch:        ${batch ?? 1}`,
-          `Status:       ${na(r.assessmentStatus)}`,
-          `Hiring Stage: ${na(r.hiringStage)}`,
-          `Date:         ${na(r.createdAt)}`,
+          `┌─ CANDIDATE ────────────────────────────`,
+          `  Name         : ${[seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A"}`,
+          `  Email        : ${na(seeker.email)}`,
+          `  SeekerId     : ${na(seekerId)}`,
+          `  Batch        : ${batch ?? 1}`,
+          `  Status       : ${na(r.assessmentStatus)}`,
+          `  Hiring Stage : ${na(r.hiringStage)}`,
+          `  Date         : ${na(r.createdAt)}`,
+          workExpYr != null || workExpMo != null
+            ? `  Experience   : ${workExpYr ?? 0} yr ${workExpMo ?? 0} mo`
+            : "",
+          currSalary != null ? `  Current Salary  : ${currency}${currSalary}` : "",
+          expSalary  != null ? `  Expected Salary : ${currency}${expSalary}` : "",
+          joiningDate        ? `  Joining Date    : ${joiningDate}` : "",
+          rating != null     ? `  Interview Rating: ${"★".repeat(Math.round(rating))} (${rating}/5)` : "",
+          feedbackText       ? `  Feedback        : "${feedbackText}"` : "",
           ``,
-          `--- Scores ---`,
-          `Overall Score:       ${na(r.totalScore)}`,
-          `Final Score:         ${finalScore ? JSON.stringify(finalScore) : "N/A"}`,
-          `Fit Score:           ${fitScore}`,
-          `  Weights → Code Quality: ${na(weights.codeQuality)}% | Problem Solving: ${na(weights.problemSolving)}% | Optimization: ${na(weights.codeOptimization)}%`,
-          `Avg Code Quality:    ${avgCQ}`,
-          `Avg Problem Solving: ${avgPS}`,
-          `Avg Optimization:    ${avgCO}`,
-          `Questions Answered:  ${answeredCount} / ${codingQs.length}`,
+          `┌─ SCORES ───────────────────────────────`,
+          `  Overall Score        : ${na(r.totalScore)}`,
+          fitPct != null
+            ? `  Fit Score            : ${fitLine(fitPct)}`
+            : `  Fit Score            : N/A`,
+          `    └ Weights → Code Quality: ${wCQ}% | Problem Solving: ${wPS}% | Optimization: ${wCO}%`,
+          `  Avg Code Quality     : ${aggCQ != null ? `${aggCQ}% — ${getScoreLabel(aggCQ)}` : "N/A"}`,
+          `  Avg Problem Solving  : ${aggPS != null ? `${aggPS}% — ${getScoreLabel(aggPS)}` : "N/A"}`,
+          `  Avg Optimization     : ${aggCO != null ? `${aggCO}% — ${getScoreLabel(aggCO)}` : "N/A"}`,
+          `  Questions Answered   : ${answeredCount} / ${codingQs.length}`,
           ``,
-          `--- Media ---`,
-          `Video Link:      ${na(videoResult.video_link)}`,
-          `Video Available: ${videoResult.isVideoDeleted ? "No (deleted)" : videoResult.video_link ? "Yes" : "N/A"}`,
+          `┌─ AI SUMMARY ───────────────────────────`,
+          aiSummary,
           ``,
-          `--- Coding Questions (${codingQs.length}) ---`,
-          ...qLines,
-        ];
+          `┌─ MEDIA ─────────────────────────────────`,
+          `  Video Available: ${videoResult.isVideoDeleted ? "No (deleted)" : videoResult.video_link ? "Yes" : "N/A"}`,
+          videoResult.video_link ? `  Video Link     : ${videoResult.video_link}` : "",
+          ``,
+          `┌─ CODING QUESTIONS (${codingQs.length}) ─────────────────`,
+          ...qLines.map((q: string) => q + "\n"),
+        ].filter((l: string) => l !== "");
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       } catch (err) {
@@ -425,7 +647,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   // ── get_verbal_report ──────────────────────────────────────────────────────
   server.tool(
     "get_verbal_report",
-    `Returns the full report for a Verbal/EPT (English Proficiency Test) candidate.
+    `Returns the full report for a Verbal/EPT (English Proficiency Test) candidate: CEFR level, language breakdown with labels, accent, AI summary, per-topic word detections.
 
 statusId is the HyringScreenerStatus ID from list_attended_candidates (not the assessment UUID).
 batch is the attempt number (1 = first attempt).`,
@@ -439,7 +661,7 @@ batch is the attempt number (1 = first attempt).`,
 
         const res = await screenerClient.get(`/language-screener/status/${statusId}/${batch ?? 1}`);
 
-        // Response shape: { data: englishReportData } — direct object, not wrapped in array
+        // Response shape: { data: englishReportData }
         const d = res.data?.data ?? res.data;
 
         if (!d) {
@@ -453,21 +675,6 @@ batch is the attempt number (1 = first attempt).`,
         const cog        = d.cognitive?.[0]?.cognitive_metrics ?? {};
         const results: any[] = d.results ?? [];
 
-        // Per-topic word detections
-        const topicLines = results.map((r: any, i: number) => {
-          const influenced = (r.influenced_words?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
-          const unclear    = (r.unclear_words_count?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
-          const grammar    = (r.tense_article_misuse_count?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
-          const parasitic  = (r.parasitic_words?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
-          return [
-            `  Topic ${i + 1}: [${r.candidate_start_sec ?? "?"}s – ${r.candidate_end_sec ?? "?"}s]`,
-            influenced ? `  Mother Tongue Influenced: ${influenced}` : "",
-            unclear    ? `  Unclear Pronunciation:    ${unclear}`    : "",
-            grammar    ? `  Grammar Issues:           ${grammar}`    : "",
-            parasitic  ? `  Filler/Parasitic Words:   ${parasitic}`  : "",
-          ].filter(Boolean).join("\n");
-        });
-
         // CEFR level from totalScore
         const score = d.totalScore ?? 0;
         const cefr =
@@ -478,51 +685,93 @@ batch is the attempt number (1 = first attempt).`,
           score >= 50 ? "A2 (Elementary)" :
                         "A1 (Beginner)";
 
+        // Language dimension scores (0-10 scale → × 10 for %)
+        const toCommPct = (v: any) => v != null ? Math.round(parseFloat(String(v)) * 10) : 0;
+        const fluencyPct  = toCommPct(agg.fluency_score);
+        const gramPct     = toCommPct(agg.grammar_score);
+        const pronPct     = toCommPct(agg.pronunciation_score);
+        const vocabPct    = toCommPct(agg.vocabulary_score);
+        const fillerPct   = toCommPct(agg.filler_word_score);
+        const mtPct       = toCommPct(agg.mother_tongue_score);
+
+        // Accent
+        const accentText = cog.accent_analysis
+          ? (typeof cog.accent_analysis === "object"
+              ? `${cog.accent_analysis.detected_accent ?? ""} (${cog.accent_analysis.country_code ?? ""})`.trim()
+              : String(cog.accent_analysis))
+          : "N/A";
+
+        // AI Summary
+        const aiSummary = formatAISummary(agg.overall_summary_points);
+
+        // Per-topic word detections
+        const topicLines = results.map((r: any, i: number) => {
+          const influenced = (r.influenced_words?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
+          const unclear    = (r.unclear_words_count?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
+          const grammar    = (r.tense_article_misuse_count?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
+          const parasitic  = (r.parasitic_words?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
+          return [
+            `  Topic ${i + 1}: [${r.candidate_start_sec ?? "?"}s – ${r.candidate_end_sec ?? "?"}s]`,
+            influenced ? `  Mother Tongue Influenced : ${influenced}` : "",
+            unclear    ? `  Unclear Pronunciation    : ${unclear}`    : "",
+            grammar    ? `  Grammar Issues           : ${grammar}`    : "",
+            parasitic  ? `  Filler/Parasitic Words   : ${parasitic}`  : "",
+          ].filter(Boolean).join("\n");
+        });
+
         const lines = [
-          `=== ENGLISH PROFICIENCY TEST REPORT ===`,
-          `StatusId:   ${statusId}`,
-          `Job Title:  ${na(assessment.jobTitle)}`,
+          `╔══════════════════════════════════════╗`,
+          `║   ENGLISH PROFICIENCY TEST REPORT    ║`,
+          `╚══════════════════════════════════════╝`,
+          `StatusId   : ${statusId}`,
+          `Job Title  : ${na(assessment.jobTitle)}`,
           ``,
-          `--- Candidate ---`,
-          `Name:         ${[seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || na(seeker.fullName)}`,
-          `Email:        ${na(seeker.email)}`,
-          `SeekerId:     ${na(d.seeker_id)}`,
-          `Batch:        ${batch ?? 1}`,
-          `Status:       ${na(status.assessmentStatus)}`,
-          `Hiring Stage: ${na(d.hiringStage)}`,
-          `Qualified:    ${d.isQualified ? "Yes ✓" : "No ✗"}`,
-          `Date:         ${na(d.createdAt)}`,
+          `┌─ CANDIDATE ────────────────────────────`,
+          `  Name         : ${[seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || na(seeker.fullName)}`,
+          `  Email        : ${na(seeker.email)}`,
+          `  SeekerId     : ${na(d.seeker_id)}`,
+          `  Batch        : ${batch ?? 1}`,
+          `  Status       : ${na(status.assessmentStatus)}`,
+          `  Hiring Stage : ${na(d.hiringStage)}`,
+          `  Qualified    : ${d.isQualified ? "Yes ✓" : "No ✗"}`,
+          `  Date         : ${na(d.createdAt)}`,
           ``,
-          `--- Overall Score ---`,
-          `Total Score:  ${na(d.totalScore)} → ${cefr}`,
+          `┌─ OVERALL SCORE ─────────────────────────`,
+          `  Total Score : ${na(score)}% → ${cefr}`,
           ``,
-          `--- Language Breakdown ---`,
-          `Fluency:              ${na(agg.fluency_score)}`,
-          `Grammar:              ${na(agg.grammar_score)}`,
-          `Pronunciation:        ${na(agg.pronunciation_score)}`,
-          `Vocabulary:           ${na(agg.vocabulary_score)}`,
-          `Filler Words:         ${na(agg.filler_word_score)}`,
-          `Mother Tongue Influence: ${na(agg.mother_tongue_score)}`,
+          `┌─ LANGUAGE BREAKDOWN ───────────────────`,
+          `  Fluency            : ${fluencyPct}%  — ${getScoreLabel(fluencyPct)}`,
+          `  Grammar            : ${gramPct}%  — ${getScoreLabel(gramPct)}`,
+          `  Pronunciation      : ${pronPct}%  — ${getScoreLabel(pronPct)}`,
+          `  Vocabulary         : ${vocabPct}%  — ${getScoreLabel(vocabPct)}`,
+          `  Minimal Filler Words: ${fillerPct}% — ${getScoreLabel(fillerPct)}`,
+          `  Mother Tongue Influence: ${mtPct}% — ${getScoreLabel(mtPct)}`,
+          `  Accent             : ${accentText}`,
           ``,
-          `--- AI Summary ---`,
-          agg.overall_summary_points
-            ? (typeof agg.overall_summary_points === "string"
-                ? agg.overall_summary_points
-                : JSON.stringify(agg.overall_summary_points, null, 2))
+          `┌─ AI SUMMARY ───────────────────────────`,
+          aiSummary,
+          ``,
+          `┌─ BEHAVIORAL INSIGHTS ──────────────────`,
+          cog.behavioral_insights
+            ? (typeof cog.behavioral_insights === "string"
+                ? cog.behavioral_insights
+                : JSON.stringify(cog.behavioral_insights, null, 2))
             : "N/A",
           ``,
-          `--- Intelligence ---`,
-          `Accent Analysis:      ${na(cog.accent_analysis)}`,
-          `Behavioral Insights:  ${cog.behavioral_insights ? JSON.stringify(cog.behavioral_insights) : "N/A"}`,
-          `Fraud & Integrity:    ${cog.fraud_integrity ? JSON.stringify(cog.fraud_integrity) : "N/A"}`,
+          `┌─ FRAUD & INTEGRITY ─────────────────────`,
+          cog.fraud_integrity
+            ? (typeof cog.fraud_integrity === "string"
+                ? cog.fraud_integrity
+                : JSON.stringify(cog.fraud_integrity, null, 2))
+            : "N/A",
           ``,
-          `--- Media ---`,
-          `Video Link:    ${na(d.videoLink)}`,
-          `Video Deleted: ${d.isVideoDeleted ? "Yes" : "No"}`,
+          `┌─ MEDIA ─────────────────────────────────`,
+          `  Video Available: ${d.isVideoDeleted ? "No (deleted)" : d.videoLink ? "Yes" : "N/A"}`,
+          d.videoLink ? `  Video Link     : ${d.videoLink}` : "",
           ``,
-          `--- Topic Breakdown (${results.length} topic(s)) ---`,
-          ...topicLines,
-        ];
+          `┌─ TOPIC BREAKDOWN (${results.length} topics) ──────────────`,
+          ...topicLines.map((t: string) => t + "\n"),
+        ].filter((l: string) => l !== "");
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       } catch (err) {
