@@ -13,11 +13,13 @@ export function registerAssessmentViewTools(server: McpServer) {
     {
       status: z.enum(["active", "inactive", "drafts", "archived"]).optional()
         .describe("Filter by status. Default: active"),
+      interviewType: z.enum(["fixed", "dynamic", "coding", "verbal"]).optional()
+        .describe("Filter by type. Use 'verbal' for English Proficiency Test assessments. Omit for One-way/Two-way/Coding."),
       page:   z.number().optional().describe("Page number (1-based). Default: 1"),
       take:   z.number().optional().describe("Results per page. Default: 50"),
       search: z.string().optional().describe("Search by job title"),
     },
-    async ({ status = "active", page = 1, take = 50, search }) => {
+    async ({ status = "active", interviewType, page = 1, take = 50, search }) => {
       try {
         const employerId = await getEmployerIdFromAPI();
 
@@ -30,6 +32,9 @@ export function registerAssessmentViewTools(server: McpServer) {
 
         const params: any = { skip: page - 1, take };
         if (search) params.search = search;
+        // EPT/verbal assessments are stored separately — backend requires verbal=true to return them
+        if (interviewType === "verbal") params.verbal = true;
+        else if (interviewType) params.interviewType = interviewType;
 
         const res = await screenerClient.get(endpointMap[status], { params });
 

@@ -12,27 +12,37 @@ export function registerCandidateReviewTools(server: McpServer) {
     "Lists candidates for an assessment filtered by status. Returns seekerIds needed for result tools.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
+      interviewType: z.enum(["fixed", "dynamic", "coding", "verbal"]).optional()
+        .describe("Assessment type. Required for verbal (EPT) — uses a different endpoint."),
       status: z.enum(["completed", "invited", "started", "declined", "not_qualified", "retake", "scheduled"]).optional()
         .describe("Filter by status. Default: completed"),
       skip: z.number().optional().describe("Pagination offset. Default: 0"),
       take: z.number().optional().describe("Number of results. Default: 20"),
     },
-    async ({ assessmentId, status = "completed", skip = 0, take = 20 }) => {
+    async ({ assessmentId, interviewType, status = "completed", skip = 0, take = 20 }) => {
       try {
-        // Backend routes confirmed: all use view/ prefix
+        // Backend routes confirmed: all use view/ prefix EXCEPT verbal attended
         // Response tuple: [assessmentData, topFiveCandidate, filteredResponses, total_count, filtered_count, stageCountsData, metrics]
         // Candidates are at index [2], total_count at index [3]
-        const endpointMap: Record<string, string> = {
-          completed:     `/assessment/view/attended/${assessmentId}`,
-          invited:       `/assessment/view/invited/${assessmentId}`,
-          started:       `/assessment/view/started/${assessmentId}`,
-          declined:      `/assessment/view/declined/${assessmentId}`,
-          not_qualified: `/assessment/view/not-qualified/${assessmentId}`,
-          retake:        `/assessment/view/retake-request/${assessmentId}`,
-          scheduled:     `/assessment/view/scheduled/${assessmentId}`,
-        };
 
-        const res = await screenerClient.get(endpointMap[status], { params: { skip, take } });
+        let res;
+        if (interviewType === "verbal" && status === "completed") {
+          // Verbal/EPT attended uses a completely different endpoint
+          res = await screenerClient.get(`/assessment/verbal/attended/${assessmentId}`, {
+            params: { skip, take: Math.max(take, 10), search: "", stage: "", level: "", status: "", date: "", sortBy: "" },
+          });
+        } else {
+          const endpointMap: Record<string, string> = {
+            completed:     `/assessment/view/attended/${assessmentId}`,
+            invited:       `/assessment/view/invited/${assessmentId}`,
+            started:       `/assessment/view/started/${assessmentId}`,
+            declined:      `/assessment/view/declined/${assessmentId}`,
+            not_qualified: `/assessment/view/not-qualified/${assessmentId}`,
+            retake:        `/assessment/view/retake-request/${assessmentId}`,
+            scheduled:     `/assessment/view/scheduled/${assessmentId}`,
+          };
+          res = await screenerClient.get(endpointMap[status], { params: { skip, take } });
+        }
         const raw = res.data?.data;
 
         // Backend returns a tuple: [assessment_info, top_candidates, candidates_list, total_count, ...]

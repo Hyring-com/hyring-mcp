@@ -148,7 +148,7 @@ export function registerResumeViewTools(server: McpServer) {
   authedTool(
     server,
     "get_resume_report",
-    "Returns the full resume screening report for a candidate: fit score, criteria match by type (MUST_HAVE/NICE_TO_HAVE/STARRED), skills matched, experience, AI feedback, and resume download link.",
+    "Returns the full resume screening report for a candidate: fit score, criteria match (MUST HAVE / nice-to-have), skill depth analysis, company tier analysis, industry exposure, AI summary, and resume link.",
     {
       statusId: z.string().describe("HyringScreenerStatus ID from list_resume_candidates"),
     },
@@ -166,37 +166,39 @@ export function registerResumeViewTools(server: McpServer) {
         }
 
         const r          = Array.isArray(raw) ? raw[0] : raw;
-        const seeker     = r?.seekerCat ?? r?.seeker ?? {};
+        const seeker     = r?.seekerCat ?? {};
         const assessment = r?.hyringScreenerAssessment ?? {};
-        const criteria: any[] = r?.criteria ?? r?.screeningCriteria ?? [];
 
-        const name = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A";
+        // Candidate name — use record's own name field first (covers passive/uploaded candidates)
+        const name = (r?.name
+          ?? [seeker.firstName, seeker.lastName].filter(Boolean).join(" "))
+          || "N/A";
+        const email = r?.email ?? seeker.email ?? "N/A";
 
         // ── Fit score ─────────────────────────────────────────────────────────
-        const fitScore = r?.fitScore ?? r?.totalScore ?? r?.matchPercentage ?? null;
+        // Schema field: fitScore (Float?)
+        const fitScore = r?.fitScore ?? null;
         const fitLabel = typeof fitScore === "number"
           ? (fitScore >= 76 ? "STRONG FIT" : fitScore >= 51 ? "GOOD FIT" : fitScore >= 26 ? "MODERATE FIT" : "WEAK FIT")
           : "N/A";
 
-        // ── Criteria breakdown ────────────────────────────────────────────────
-        // Backend stores type: "MUST_HAVE" | "NICE_TO_HAVE" | "STARRED"
-        const mustHaveCriteria  = criteria.filter((c: any) => c.type === "MUST_HAVE"  || c.mustHave === true);
-        const niceToHave        = criteria.filter((c: any) => c.type === "NICE_TO_HAVE");
-        const starred           = criteria.filter((c: any) => c.type === "STARRED");
-        const other             = criteria.filter((c: any) => !c.type && c.mustHave !== true && !c.mustHave);
+        // Qualified — direct boolean on record
+        const qualified = r?.qualified ?? null;
 
-        const mustHaveMatched   = mustHaveCriteria.filter((c: any) => c.isMatched ?? c.matched).length;
-        const allMustHaveMet    = mustHaveCriteria.length > 0 && mustHaveMatched === mustHaveCriteria.length;
+        // ── Criteria breakdown ────────────────────────────────────────────────
+        // Schema: criteria Json? — [{ id, keyword, mustHave: boolean, fitScore: boolean, isMatched: boolean }]
+        // There is NO type field — only mustHave boolean splits them.
+        const criteria: any[] = r?.criteria ?? [];
+
+        const mustHaveCriteria = criteria.filter((c: any) => c.mustHave === true);
+        const niceToHave       = criteria.filter((c: any) => !c.mustHave);
+
+        const mustHaveMatched = mustHaveCriteria.filter((c: any) => c.isMatched === true).length;
 
         function criteriaLine(c: any, i: number, prefix: string): string {
-          const matched = c.isMatched ?? c.matched;
-          const match   = matched === true ? "✅ Matched" : matched === false ? "❌ Not Matched" : "— N/A";
-          const text    = c.keyword ?? c.criteria ?? c.text ?? "N/A";
-          const evidence = c.evidence ?? c.reason ?? "";
-          return [
-            `  ${i + 1}. [${prefix}] ${text} — ${match}`,
-            evidence ? `     Evidence: ${evidence}` : "",
-          ].filter(Boolean).join("\n");
+          const match = c.isMatched === true ? "✅ Matched" : "❌ Not Matched";
+          const text  = c.keyword ?? "N/A";
+          return `  ${i + 1}. [${prefix}] ${text} — ${match}`;
         }
 
         const criteriaLines: string[] = [];
@@ -204,34 +206,55 @@ export function registerResumeViewTools(server: McpServer) {
           criteriaLines.push("  🔴 MUST HAVE:");
           mustHaveCriteria.forEach((c: any, i: number) => criteriaLines.push(criteriaLine(c, i + 1, "MUST HAVE")));
         }
-        if (starred.length) {
-          criteriaLines.push("  ⭐ STARRED:");
-          starred.forEach((c: any, i: number) => criteriaLines.push(criteriaLine(c, i + 1, "STARRED")));
-        }
         if (niceToHave.length) {
           criteriaLines.push("  🟡 NICE TO HAVE:");
           niceToHave.forEach((c: any, i: number) => criteriaLines.push(criteriaLine(c, i + 1, "NICE TO HAVE")));
         }
-        if (other.length) {
-          criteriaLines.push("  Other:");
-          other.forEach((c: any, i: number) => criteriaLines.push(criteriaLine(c, i + 1, "OTHER")));
-        }
 
-        // ── Skills analysis ───────────────────────────────────────────────────
-        const skillsMatched : string[] = r?.skillsMatched  ?? [];
-        const skillsNotFound: string[] = r?.skillsNotFound ?? r?.skillsMissing ?? [];
-        const experienceYears = r?.experienceYears ?? seeker.yearOfExperience ?? null;
+        // ── Skill depth analysis ───────────────────────────────────────────────
+        // Schema: skillDepthAnalysis Json? — [{ skill: String, percent: Int }]
+        const skillDepth: any[] = r?.skillDepthAnalysis ?? [];
+        const skillDepthLines = skillDepth.map((s: any) =>
+          `  ${s.skill ?? s.name ?? "N/A"}: ${s.percent ?? s.value ?? "N/A"}%`
+        );
 
-        // ── Extracted resume data ─────────────────────────────────────────────
-        const currentRole    = r?.extractedData?.currentRole    ?? seeker.currentDesignation ?? null;
-        const currentCompany = r?.extractedData?.currentCompany ?? seeker.currentCompany     ?? null;
-        const education      = r?.extractedData?.education      ?? null;
+        // ── Company tier analysis ─────────────────────────────────────────────
+        // Schema: companyTierAnalysis Json? — [{ tier: String, percent: Int }]
+        const companyTier: any[] = r?.companyTierAnalysis ?? [];
+        const companyTierLines = companyTier.map((c: any) =>
+          `  ${c.tier ?? c.name ?? "N/A"}: ${c.percent ?? c.value ?? "N/A"}%`
+        );
 
-        // ── AI feedback ───────────────────────────────────────────────────────
-        const aiFeedback = r?.feedback ?? r?.aiFeedback ?? null;
+        // ── Industry exposure ─────────────────────────────────────────────────
+        // Schema: majorIndustryExposure Json? — [{ industry: String, percent: Int }]
+        const industryExp: any[] = r?.majorIndustryExposure ?? [];
+        const industryLines = industryExp.map((ind: any) =>
+          `  ${ind.industry ?? ind.name ?? "N/A"}: ${ind.percent ?? ind.value ?? "N/A"}%`
+        );
+
+        // ── Experience ────────────────────────────────────────────────────────
+        // Schema: experienceInMonths Int?
+        const expMonths = r?.experienceInMonths ?? null;
+        const expYears  = expMonths != null ? `${Math.floor(expMonths / 12)} yr ${expMonths % 12} mo` : null;
+
+        // ── AI summary ────────────────────────────────────────────────────────
+        // Schema: ai_summary Json?
+        const aiSummary = r?.ai_summary;
+        const aiSummaryText = !aiSummary
+          ? "N/A"
+          : typeof aiSummary === "string"
+          ? aiSummary
+          : Array.isArray(aiSummary)
+          ? aiSummary.map((s: any, i: number) => `  ${i + 1}. ${s}`).join("\n")
+          : JSON.stringify(aiSummary, null, 2);
 
         // ── Resume download link ──────────────────────────────────────────────
-        const resumeUrl = r?.resume_url ?? r?.resumeUrl ?? seeker.resumeUrl ?? null;
+        const resumeUrl = r?.resumeUrl ?? r?.resume_url ?? seeker.resumeUrl ?? null;
+
+        // ── Location ──────────────────────────────────────────────────────────
+        const locationStr = r?.location
+          ? (typeof r.location === "string" ? r.location : JSON.stringify(r.location))
+          : null;
 
         const lines = [
           `╔══════════════════════════════════════╗`,
@@ -242,28 +265,28 @@ export function registerResumeViewTools(server: McpServer) {
           ``,
           `┌─ CANDIDATE ────────────────────────────`,
           `  Name         : ${name}`,
-          `  Email        : ${seeker.email ?? "N/A"}`,
+          `  Email        : ${email}`,
           `  StatusId     : ${statusId}`,
-          currentRole    ? `  Current Role    : ${currentRole}`    : "",
-          currentCompany ? `  Current Company : ${currentCompany}` : "",
-          education      ? `  Education       : ${education}`      : "",
-          experienceYears != null ? `  Experience      : ${experienceYears} year(s)` : "",
-          `  Status       : ${r?.assessmentStatus ?? "N/A"}`,
+          locationStr    ? `  Location     : ${locationStr}` : "",
+          expYears       ? `  Experience   : ${expYears}`    : "",
+          `  Status       : ${r?.status ?? "N/A"}`,
+          `  Source       : ${r?.source ?? "N/A"}`,
           `  Submitted    : ${r?.createdAt ?? "N/A"}`,
-          resumeUrl      ? `  Resume URL      : ${resumeUrl}` : "",
+          resumeUrl      ? `  Resume URL   : ${resumeUrl}` : "",
           ``,
           `┌─ FIT SCORE ────────────────────────────`,
-          `  Fit Score : ${fitScore != null ? fitScore + "%" : "N/A"} — ${fitLabel}`,
-          `  Qualification: ${allMustHaveMet ? "✅ Qualified (all MUST HAVE met)" : mustHaveCriteria.length ? `❌ Not Qualified (${mustHaveMatched}/${mustHaveCriteria.length} MUST HAVE met)` : "N/A"}`,
-          ``,
-          skillsMatched.length  ? `┌─ SKILLS MATCHED ───────────────────────\n  ${skillsMatched.join(", ")}` : "",
-          skillsNotFound.length ? `┌─ SKILLS NOT FOUND ─────────────────────\n  ${skillsNotFound.join(", ")}` : "",
+          `  Fit Score     : ${fitScore != null ? Math.round(fitScore) + "%" : "N/A"} — ${fitLabel}`,
+          `  Qualification : ${qualified != null ? (qualified ? "✅ Qualified" : "❌ Not Qualified") : mustHaveCriteria.length ? `${mustHaveMatched}/${mustHaveCriteria.length} MUST HAVE met` : "N/A"}`,
           ``,
           `┌─ SCREENING CRITERIA (${criteria.length}) ──────────────`,
-          ...criteriaLines,
+          criteriaLines.length ? criteriaLines.join("\n") : "  No criteria defined.",
           ``,
-          `┌─ AI FEEDBACK ──────────────────────────`,
-          aiFeedback ?? "N/A",
+          skillDepthLines.length ? `┌─ SKILL DEPTH ANALYSIS ─────────────────\n${skillDepthLines.join("\n")}` : "",
+          companyTierLines.length ? `┌─ COMPANY TIER ANALYSIS ────────────────\n${companyTierLines.join("\n")}` : "",
+          industryLines.length   ? `┌─ INDUSTRY EXPOSURE ────────────────────\n${industryLines.join("\n")}` : "",
+          ``,
+          `┌─ AI SUMMARY ───────────────────────────`,
+          aiSummaryText,
         ].filter((l: string) => l !== "");
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };

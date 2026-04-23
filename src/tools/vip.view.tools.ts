@@ -33,14 +33,14 @@ function fitLine(score: number | null): string {
   return `${pct}% — ${getFitLabel(pct)}`;
 }
 
-/** Question score 0-4 scale → label */
+/** Question score 0-4 scale → label (VIP: Poor/Average/Fair/Perfect) */
 function getQuestionScoreLabel(score: number | null | undefined): string {
   if (score == null) return "N/A";
   if (score <= 0) return "Not Scored";
   if (score <= 1) return "Poor";
   if (score <= 2) return "Average";
-  if (score <= 3) return "Good";
-  return "Excellent";
+  if (score <= 3) return "Fair";
+  return "Perfect";
 }
 
 /** understand_score 0-10 scale → label */
@@ -178,10 +178,11 @@ export function registerVipViewTools(server: McpServer) {
       try {
         const employerId = getEmployerIdFromToken();
         const res = await vipClient.get(`/details/interview/${status}/${employerId}`, {
-          params: { assessmentId },
+          params: { assessmentId, skip: "0", take: "10" },
         });
         const raw = res.data?.data ?? res.data;
-        const interviews: any[] = Array.isArray(raw) ? raw : [];
+        // Backend returns tuple: [interviewsList, totalCount, assessmentData]
+        const interviews: any[] = Array.isArray(raw) && Array.isArray(raw[0]) ? raw[0] : (Array.isArray(raw) ? raw : []);
 
         if (!interviews.length) {
           return { content: [{ type: "text" as const, text: `No ${status} interviews found for job role ${assessmentId}.` }] };
@@ -286,12 +287,12 @@ statusId is the interview StatusId from list_vip_interviews.`,
         const aiSummary = formatAISummary(r?.ai_summary);
 
         // ── Per-skill Q&A breakdown from questionResults ──────────────────────
+        // VIP uses questionResults[] with no speaker field — all entries are Q&A pairs
         const questionResults: any[] = r?.questionResults ?? [];
-        const candidateQs = questionResults.filter((q: any) => q.speaker === "candidate" || !q.speaker);
 
         // Group by skill
         const skillMap: Record<string, any[]> = {};
-        candidateQs.forEach((q: any) => {
+        questionResults.forEach((q: any) => {
           const skill = q.skill ?? "General";
           if (!skillMap[skill]) skillMap[skill] = [];
           skillMap[skill].push(q);
@@ -299,8 +300,8 @@ statusId is the interview StatusId from list_vip_interviews.`,
 
         const skillLines: string[] = [];
         Object.entries(skillMap).forEach(([skill, qs]) => {
-          // Skill average score (0-4 scale)
-          const applicableQs = qs.filter((q: any) => q.scoreApplicable !== false);
+          // Skill average score (0-4 scale): only score_applicable questions count
+          const applicableQs = qs.filter((q: any) => q.scoreApplicable === true || q.score_applicable === true);
           const avgScore = applicableQs.length
             ? Math.min(applicableQs.reduce((sum: number, q: any) => sum + (q.score ?? 0), 0) / Math.max(applicableQs.length, 3), 4)
             : null;
@@ -311,7 +312,8 @@ statusId is the interview StatusId from list_vip_interviews.`,
           qs.forEach((q: any, i: number) => {
             const score = q.score ?? null;
             const understandScore = q.understand_score ?? null;
-            const transcript = q.transcript ?? q.answer ?? "";
+            // VIP: answer field first, fallback to transcript (matches addUUid in vip-report-helper)
+            const transcript = q.answer ?? q.transcript ?? "";
             skillLines.push(`    Q${i + 1}: ${q.question ?? "N/A"}`);
             skillLines.push(`    Score: ${score != null ? score + "/4" : "N/A"} — ${getQuestionScoreLabel(score)}${understandScore != null ? ` | Understanding: ${understandScore}/10 — ${getUnderstandLabel(understandScore)}` : ""}`);
             if (transcript) {
@@ -382,7 +384,7 @@ statusId is the interview StatusId from list_vip_interviews.`,
           fraudIntegrity    ? `  Fraud/Integrity    : ${fmtObj(fraudIntegrity)}`    : "",
           (!integritySignals && !engagementVibes && !cognitiveInsights) ? "  N/A" : "",
           ``,
-          `┌─ SKILL BREAKDOWN (${Object.keys(skillMap).length} skill(s), ${candidateQs.length} responses) ──`,
+          `┌─ SKILL BREAKDOWN (${Object.keys(skillMap).length} skill(s), ${questionResults.length} responses) ──`,
           ...(skillLines.length ? skillLines : ["  No question results available"]),
           `┌─ MEDIA ─────────────────────────────────`,
           `  Video     : ${isDeleted ? "Deleted" : videoLink ? videoLink : "N/A"}`,
