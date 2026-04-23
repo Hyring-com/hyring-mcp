@@ -93,7 +93,10 @@ export function registerCandidateResultsTools(server: McpServer) {
   authedTool(
     server,
     "list_attended_candidates",
-    `Lists candidates who have completed an assessment, with their scores and hiring stage.
+    `Lists candidates who have completed an assessment, with their scores.
+
+- fixed/dynamic/coding: shows Hiring Stage (SHORTLISTED / HIRED / REJECTED / ON_HOLD / NOT_YET_EVALUATED)
+- verbal (EPT): shows Qualified (Yes/No) — no hiring stage for EPT
 
 The Batch number shown for each candidate is their LATEST attempt. Always pass this batch number to the report tool — if you omit it, the report defaults to batch 1 (first attempt) which may be outdated.
 
@@ -133,7 +136,6 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           const seekerId = c.seekerId ?? seeker.seekerId ?? "N/A";
           const statusId = c.id ?? c.statusId ?? "N/A";
           const batch    = c.batch ?? 1;
-          const stage    = c.hiringStage ?? "N/A";
           const score    = c.totalScore  ?? "N/A";
 
           const idInfo = interviewType === "verbal"
@@ -141,7 +143,11 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
             : `SeekerId: ${seekerId}`;
           const retakeNote = batch > 1 ? ` (retake — ${batch} attempts)` : "";
 
-          return `${i + 1}. [${idInfo} | Latest Batch: ${batch}${retakeNote}] ${name} <${email}>\n   Score: ${score} | Stage: ${stage}`;
+          const statusInfo = interviewType === "verbal"
+            ? `Qualified: ${c.isQualified != null ? (c.isQualified ? "Yes ✓" : "No ✗") : "N/A"}`
+            : `Stage: ${c.hiringStage ?? "N/A"}`;
+
+          return `${i + 1}. [${idInfo} | Latest Batch: ${batch}${retakeNote}] ${name} <${email}>\n   Score: ${score} | ${statusInfo}`;
         });
 
         const reportTool = interviewType === "fixed" ? "get_fixed_report" : interviewType === "dynamic" ? "get_dynamic_report" : "get_coding_report";
@@ -262,8 +268,9 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           : "N/A";
 
         // ── Per-question breakdown ────────────────────────────────────────────
+        // Frontend uses HyringScreenerResult[0] (filtered by batch server-side), not HyringScreenerAnswers
         const qLines = questions.map((q: any, i: number) => {
-          const ans = q.HyringScreenerAnswers?.[batchNum] ?? {};
+          const ans = q.HyringScreenerResult?.[0] ?? q.HyringScreenerAnswers?.[batchNum] ?? {};
           const score   = ans.score   ?? q.score;
           const isApplicable = ans.isScoreApplicable ?? true;
           const label = !isApplicable ? "Score Not Applicable" : getQuestionLabel(score);
@@ -346,8 +353,9 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           batch: batch ?? 1,
         });
 
-        // Backend returns: { status: true, message: "ok", data: result }
-        const r = res.data?.data ?? res.data;
+        // Backend returns: { data: { data: { hyringScreenerAssessment, ... } } }
+        // Frontend does: data.data?.data — so we must unwrap twice past axios's .data
+        const r = res.data?.data?.data ?? res.data?.data ?? res.data;
 
         if (!r) {
           return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
@@ -357,24 +365,45 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const seeker         = r.seekerCat ?? {};
         const weights        = assessment.fitScoreWeightAge?.[0] ?? {};
         const batchNum       = (batch ?? 1) - 1;
-        const contextResult  = assessment.hyringScreenerContextResult?.[batchNum] ?? {};
+        // Frontend always uses hyringScreenerContextResult[0] — API filters by batch server-side
+        const contextResult  = assessment.hyringScreenerContextResult?.[0] ?? {};
         const context0       = contextResult.context_result?.[0] ?? {};
 
         // ── Communication scores ─────────────────────────────────────────────
-        // Primary: speech_proficiency from videoAnalysis (matches frontend exactly, already 0-10 → ×10)
-        // Fallback: english_score in context_result (pronunciation_score, grammar_score etc., 0-10)
-        const langScore = contextResult.videoAnalysis?.speech_proficiency ?? context0.english_score ?? {};
-
+        // Primary: speech_proficiency (when video exists) — fields: pronunciation, grammar, vocabulary, filler_words, fluency (0-10 → ×10)
+        // Fallback: english_score in context_result
         const toCommPct = (v: any) => v != null ? Math.round(parseFloat(String(v)) * 10) : 0;
-        const pronPct    = toCommPct(langScore.pronunciation_score ?? langScore.pronunciation);
-        const gramPct    = toCommPct(langScore.grammar_score       ?? langScore.grammar);
-        const vocabPct   = toCommPct(langScore.vocabulary_score    ?? langScore.vocabulary);
-        const fillerPct  = toCommPct(langScore.filler_score        ?? langScore.filler_words);
-        const fluencyPct = toCommPct(langScore.fluency_score       ?? langScore.fluency);
+        const speechProf = contextResult.videoAnalysis?.speech_proficiency;
+        const engScore   = context0.english_score ?? {};
+        const pronPct    = toCommPct(speechProf?.pronunciation    ?? engScore.pronunciation_score);
+        const gramPct    = toCommPct(speechProf?.grammar          ?? engScore.grammar_score);
+        const vocabPct   = toCommPct(speechProf?.vocabulary       ?? engScore.vocabulary_score);
+        const fillerPct  = toCommPct(speechProf?.filler_words     ?? engScore.filler_score);
+        const fluencyPct = toCommPct(speechProf?.fluency          ?? engScore.fluency_score);
         const commAvgPct = Math.round((pronPct + gramPct + vocabPct + fillerPct + fluencyPct) / 5);
 
+        // ── Technical Score — computed from conversation (matches CalculateScoreTwoWayInterview) ──
+        // Per skill: avg(score/5) * (100/numSkills). Score scale: 0-5.
+        const conversation: any[] = context0.conversation ?? [];
+        const skillContexts: any[] = assessment.HyringScreenerContext ?? [];
+        const skillAverages: number[] = [];
+        skillContexts.forEach((skill: any) => {
+          const relevant = conversation.filter(
+            (c: any) => c.skill === skill.skill && c.score_applicable === true
+          );
+          if (relevant.length > 0) {
+            const totalS = relevant.reduce((acc: number, c: any) => {
+              const s = c.isOverwritten ? (c.overWrittenScore ?? c.score) : c.score;
+              return acc + (s ?? 0);
+            }, 0);
+            skillAverages.push(totalS / relevant.length);
+          }
+        });
+        const techPct = skillAverages.length > 0
+          ? Math.round(skillAverages.reduce((acc: number, avg: number) => acc + (avg / 5) * (100 / skillAverages.length), 0))
+          : 0;
+
         // ── Fit Score ────────────────────────────────────────────────────────
-        const techPct = r.totalScore ?? 0;
         const wTech   = weights.technicalScore     ?? 50;
         const wComm   = weights.communicationScore ?? 50;
         const fitPct  = Math.round(techPct * (wTech / 100) + commAvgPct * (wComm / 100));
@@ -403,9 +432,6 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           : "N/A";
 
         // ── Conversation Q&A grouped by skill ────────────────────────────────
-        const conversation: any[] = context0.conversation ?? [];
-        const skillContexts: any[] = assessment.HyringScreenerContext ?? [];
-
         const convLines: string[] = [];
         if (skillContexts.length && conversation.length) {
           skillContexts.forEach((ctx: any, si: number) => {
@@ -564,8 +590,9 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const feedbackText = feedback.organizationFeedback ?? null;
 
         // ── Per-question breakdown ────────────────────────────────────────────
+        // Frontend uses HyringScreenerCodingResult[0], not HyringScreenerCodingAnswers
         const qLines = codingQs.map((q: any, i: number) => {
-          const ans = q.HyringScreenerCodingAnswers?.[batchNum] ?? q.answers?.[batchNum] ?? {};
+          const ans = q.HyringScreenerCodingResult?.[0] ?? q.HyringScreenerCodingAnswers?.[batchNum] ?? q.answers?.[batchNum] ?? {};
           // Per-question fields: score (0-10), understand_score (0-10), answerCode, isOverwritten, overWrittenScore
           const rawScore = ans.isOverwritten && ans.overWrittenScore != null
             ? ans.overWrittenScore

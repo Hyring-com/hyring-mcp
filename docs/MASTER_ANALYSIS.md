@@ -116,6 +116,8 @@ src/tools/
 | `send_reminder` | PATCH | `/assessment/send-reminder/{inviteId}` |
 
 ### Candidate Results (5 tools)
+> ℹ️ EPT/Verbal has NO hiring stage — candidates are AI-determined Qualified/Not Qualified only (score ≥ qualificationCriteria min).
+
 | Tool | Method | Endpoint |
 |------|--------|---------|
 | `list_attended_candidates` | GET | `/assessment/view/attended/{assessmentId}` |
