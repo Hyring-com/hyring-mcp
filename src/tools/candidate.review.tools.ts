@@ -12,7 +12,7 @@ export function registerCandidateReviewTools(server: McpServer) {
     "Lists candidates for an assessment filtered by status. Returns seekerIds needed for result tools.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
-      status: z.enum(["completed", "invited", "started", "declined", "not_qualified"]).optional()
+      status: z.enum(["completed", "invited", "started", "declined", "not_qualified", "retake", "scheduled"]).optional()
         .describe("Filter by status. Default: completed"),
       skip: z.number().optional().describe("Pagination offset. Default: 0"),
       take: z.number().optional().describe("Number of results. Default: 20"),
@@ -28,6 +28,8 @@ export function registerCandidateReviewTools(server: McpServer) {
           started:       `/assessment/view/started/${assessmentId}`,
           declined:      `/assessment/view/declined/${assessmentId}`,
           not_qualified: `/assessment/view/not-qualified/${assessmentId}`,
+          retake:        `/assessment/view/retake-request/${assessmentId}`,
+          scheduled:     `/assessment/view/scheduled/${assessmentId}`,
         };
 
         const res = await screenerClient.get(endpointMap[status], { params: { skip, take } });
@@ -84,34 +86,31 @@ export function registerCandidateReviewTools(server: McpServer) {
     "update_hiring_stage",
     `Updates the hiring stage for a candidate after reviewing their interview result.
 
+Applies to: One-Way (fixed), Two-Way (dynamic), and Coding interviews ONLY.
+Does NOT apply to: EPT/Verbal, Phone Screener, or Resume Screener — those use AI-determined Qualified (Yes/No) status only.
+
 Stages:
-- "QUALIFIED"     = Advance candidate in the hiring pipeline
-- "NOT_QUALIFIED" = Reject (provide a rejectReason for good candidate experience)
-- "ON_HOLD"       = Hold for later review`,
+- "SHORTLISTED"      = Advance candidate to next round
+- "HIRED"            = Candidate is hired
+- "REJECTED"         = Reject candidate (provide rejectReason for good candidate experience)
+- "ON_HOLD"          = Hold for later review
+- "NOT_APPLICABLE"   = Mark as not applicable
+- "NOT_YET_EVALUATED"= Reset to pending evaluation`,
     {
-      resultId:         z.number().describe("Result record ID (from list_candidates or get_candidate_result)"),
-      stage:            z.enum(["QUALIFIED", "NOT_QUALIFIED", "ON_HOLD"]).describe("Hiring stage to set"),
-      rejectReason:     z.string().optional().describe("Reason for rejection — recommended when stage is NOT_QUALIFIED"),
+      resultId:         z.number().describe("StatusId from list_candidates"),
+      stage:            z.enum(["SHORTLISTED", "HIRED", "REJECTED", "ON_HOLD", "NOT_APPLICABLE", "NOT_YET_EVALUATED"]).describe("Hiring stage to set"),
+      rejectReason:     z.string().optional().describe("Reason for rejection — recommended when stage is REJECTED"),
       hideRejectReason: z.boolean().optional().describe("Hide rejection reason from the candidate. Default: false"),
     },
     async ({ resultId, stage, rejectReason, hideRejectReason }) => {
       try {
-        const payload: any = {
-          id:     resultId,
-          status: stage,
-        };
-        if (rejectReason)                   payload.rejectReason     = rejectReason;
-        if (hideRejectReason !== undefined)  payload.hideRejectReason = hideRejectReason;
+        const payload: any = { id: resultId, status: stage };
+        if (rejectReason)                  payload.rejectReason     = rejectReason;
+        if (hideRejectReason !== undefined) payload.hideRejectReason = hideRejectReason;
 
         await screenerClient.patch("/assessment/result-change", payload);
 
-        const msgs: Record<string, string> = {
-          QUALIFIED:     `Candidate (result ${resultId}) marked as QUALIFIED.`,
-          NOT_QUALIFIED: `Candidate (result ${resultId}) marked as NOT QUALIFIED.${rejectReason ? `\nReason: "${rejectReason}"` : ""}`,
-          ON_HOLD:       `Candidate (result ${resultId}) placed ON HOLD.`,
-        };
-
-        return { content: [{ type: "text" as const, text: msgs[stage] }] };
+        return { content: [{ type: "text" as const, text: `Candidate (result ${resultId}) stage updated to ${stage}.${rejectReason ? `\nReason: "${rejectReason}"` : ""}` }] };
       } catch (err) {
         return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
       }

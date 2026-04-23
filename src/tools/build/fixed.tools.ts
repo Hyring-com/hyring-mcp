@@ -331,7 +331,7 @@ Time (seconds): 30, 60, 90, 120`,
       question: z.string().optional().describe("Updated question text"),
       questionType: z.enum(["General", "Technical"]).optional(),
       difficultyLevel: z.enum(["Easy", "Moderate", "Hard"]).optional(),
-      answerType: z.enum(["Voice", "Video", "Mcq"]).optional(),
+      answerType: z.enum(["Video", "Mcq", "Text"]).optional(),
       timeToAnswer: z.number().optional(),
     },
     async ({

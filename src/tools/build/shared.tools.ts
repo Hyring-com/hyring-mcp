@@ -240,7 +240,7 @@ Assessment constraint (flexi only):
           isCandidateOverallScore: overallScoreVisible ?? false,
           isCandidateIndividualScore: individualScoreVisible ?? false,
           isCommunicationScore: false,
-          scheduleAssessment: true,
+          scheduleAssessment: isSchedule,
           aiModel: "CHATGPT",
           notification: [
             {

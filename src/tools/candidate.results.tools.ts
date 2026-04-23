@@ -95,6 +95,8 @@ export function registerCandidateResultsTools(server: McpServer) {
     "list_attended_candidates",
     `Lists candidates who have completed an assessment, with their scores and hiring stage.
 
+The Batch number shown for each candidate is their LATEST attempt. Always pass this batch number to the report tool — if you omit it, the report defaults to batch 1 (first attempt) which may be outdated.
+
 For verbal (EPT) assessments each entry includes a statusId — pass that to get_verbal_report.
 For all other types the seekerId is used with get_fixed_report / get_dynamic_report / get_coding_report.`,
     {
@@ -137,13 +139,15 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           const idInfo = interviewType === "verbal"
             ? `StatusId: ${statusId}`
             : `SeekerId: ${seekerId}`;
+          const retakeNote = batch > 1 ? ` (retake — ${batch} attempts)` : "";
 
-          return `${i + 1}. [${idInfo} | Batch: ${batch}] ${name} <${email}>\n   Score: ${score} | Stage: ${stage}`;
+          return `${i + 1}. [${idInfo} | Latest Batch: ${batch}${retakeNote}] ${name} <${email}>\n   Score: ${score} | Stage: ${stage}`;
         });
 
+        const reportTool = interviewType === "fixed" ? "get_fixed_report" : interviewType === "dynamic" ? "get_dynamic_report" : "get_coding_report";
         const idHint = interviewType === "verbal"
-          ? `\nUse the StatusId + Batch with get_verbal_report.`
-          : `\nUse SeekerId + Batch with get_${interviewType === "fixed" ? "fixed" : interviewType === "dynamic" ? "dynamic" : "coding"}_report.`;
+          ? `\n⚠ Always pass the StatusId AND Batch to get_verbal_report to view the correct (latest) attempt.`
+          : `\n⚠ Always pass the SeekerId AND the Latest Batch number to ${reportTool} — omitting batch will show the first attempt, not the latest.`;
 
         return {
           content: [{
@@ -165,7 +169,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.number().describe("Candidate seekerId from list_attended_candidates"),
-      batch:        z.number().optional().describe("Retake batch number. Default: 1 (first attempt)"),
+      batch:        z.number().optional().describe("Batch number from list_attended_candidates (the Latest Batch shown). ALWAYS pass this — omitting defaults to 1 (first attempt), not the latest."),
     },
     async ({ assessmentId, seekerId, batch }) => {
       try {
@@ -189,37 +193,41 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const assessment   = r.hyringScreenerAssessment ?? {};
         const seeker       = r.seekerCat ?? {};
         const weights      = assessment.fitScoreWeightAge?.[0] ?? {};
-        const videoResult  = assessment.HyringScreenerVideoAnalysisResult?.[0] ?? {};
-        const speech       = videoResult.videoAnalysis?.speech_proficiency ?? {};
         const batchNum     = (batch ?? 1) - 1;
+        const videoResult  = assessment.HyringScreenerVideoAnalysisResult?.[batchNum] ?? {};
+        const speech       = videoResult.videoAnalysis?.speech_proficiency ?? {};
         const questions: any[] = assessment.hyringScreenerQuestions ?? [];
         const answeredCount = resultStats?._count ?? questions.length;
 
         // ── Communication scores ─────────────────────────────────────────────
-        // raw[3] has aggregate raw sums (english_pronunciation etc.) from per-question scoring
-        // Normalize: (rawSum / (answeredCount × 10)) × 100
-        const hasEngAgg = engScoreAgg && (
-          engScoreAgg.english_pronunciation != null ||
-          engScoreAgg.english_score != null ||
-          engScoreAgg.english_fluency != null
-        );
+        // Primary: speech_proficiency from videoAnalysis (0-10 scale → × 10 = %)
+        // Fallback: raw[3] aggregate raw sums — normalize: (rawSum / (answeredCount × 10)) × 100
+        const toCommPct = (v: any) => v != null ? Math.round(parseFloat(String(v)) * 10) : 0;
 
         let pronPct: number, gramPct: number, vocabPct: number, fillerPct: number, fluencyPct: number;
 
-        if (hasEngAgg && answeredCount > 0) {
-          pronPct   = normalizeEngScore(engScoreAgg.english_pronunciation ?? 0, answeredCount);
-          gramPct   = normalizeEngScore(engScoreAgg.english_score         ?? 0, answeredCount);
-          vocabPct  = normalizeEngScore(engScoreAgg.english_vocabulary    ?? 0, answeredCount);
-          fillerPct = normalizeEngScore(engScoreAgg.english_filler_words  ?? 0, answeredCount);
-          fluencyPct = normalizeEngScore(engScoreAgg.english_fluency      ?? 0, answeredCount);
+        const hasSpeech = speech && (
+          speech.pronunciation != null ||
+          speech.grammar != null ||
+          speech.fluency != null
+        );
+
+        if (hasSpeech) {
+          // Primary: speech_proficiency (0-10 → × 10 for %, matches frontend)
+          pronPct    = toCommPct(speech.pronunciation);
+          gramPct    = toCommPct(speech.grammar);
+          vocabPct   = toCommPct(speech.vocabulary);
+          fillerPct  = toCommPct(speech.filler_words);
+          fluencyPct = toCommPct(speech.fluency);
+        } else if (engScoreAgg && answeredCount > 0) {
+          // Fallback: aggregate raw sums from raw[3]
+          pronPct    = normalizeEngScore(engScoreAgg.english_pronunciation ?? 0, answeredCount);
+          gramPct    = normalizeEngScore(engScoreAgg.english_grammar       ?? 0, answeredCount);
+          vocabPct   = normalizeEngScore(engScoreAgg.english_vocabulary    ?? 0, answeredCount);
+          fillerPct  = normalizeEngScore(engScoreAgg.english_filler_words  ?? 0, answeredCount);
+          fluencyPct = normalizeEngScore(engScoreAgg.english_fluency       ?? 0, answeredCount);
         } else {
-          // Fallback: speech_proficiency from video analysis (already normalized 0-100)
-          const s2p = (v: any) => v != null ? Math.round(parseFloat(String(v))) : 0;
-          pronPct    = s2p(speech.pronunciation);
-          gramPct    = s2p(speech.grammar);
-          vocabPct   = s2p(speech.vocabulary);
-          fillerPct  = s2p(speech.filler_words);
-          fluencyPct = s2p(speech.fluency);
+          pronPct = gramPct = vocabPct = fillerPct = fluencyPct = 0;
         }
 
         const commAvgPct = Math.round((pronPct + gramPct + vocabPct + fillerPct + fluencyPct) / 5);
@@ -267,7 +275,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
             `  Q${i + 1}: ${q.question ?? "N/A"}`,
             `  Type: ${q.questionType ?? "N/A"} | Answer: ${q.answerType ?? "N/A"} | Time: ${na(q.timeToAnswer)}s`,
             `  Score: ${actualScore != null ? actualScore + "/10" : "N/A"} — ${label}`,
-            transcript ? `  Transcript: "${String(transcript).slice(0, 300)}${String(transcript).length > 300 ? "…" : ""}"` : "",
+            transcript ? `  Transcript: "${String(transcript)}"` : "",
           ].filter(Boolean).join("\n");
         });
 
@@ -296,19 +304,11 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           feedbackText       ? `  Feedback        : "${feedbackText}"` : "",
           ``,
           `┌─ SCORES ───────────────────────────────`,
-          `  Technical Score   : ${scoreLine(techPct)}`,
           `  Fit Score         : ${fitLine(fitPct)}`,
-          `    └ Weights → Technical: ${wTech}% | Communication: ${wComm}%`,
+          `  Technical Score   : ${scoreLine(techPct)}`,
+          `  Communication     : ${scoreLine(commAvgPct)}`,
+          `  Accent            : ${accentText}`,
           `  Questions Answered: ${answeredCount} / ${questions.length}`,
-          ``,
-          `┌─ COMMUNICATION BREAKDOWN ──────────────`,
-          `  Pronunciation      : ${pronPct}%  — ${getScoreLabel(pronPct)}`,
-          `  Grammar            : ${gramPct}%  — ${getScoreLabel(gramPct)}`,
-          `  Vocabulary         : ${vocabPct}%  — ${getScoreLabel(vocabPct)}`,
-          `  Fluency            : ${fluencyPct}%  — ${getScoreLabel(fluencyPct)}`,
-          `  Minimal Filler Words: ${fillerPct}% — ${getScoreLabel(fillerPct)}`,
-          `  Overall Comm Avg   : ${commAvgPct}% — ${getScoreLabel(commAvgPct)}`,
-          `  Accent             : ${accentText}`,
           ``,
           `┌─ AI SUMMARY ───────────────────────────`,
           aiSummary,
@@ -336,7 +336,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.string().describe("Candidate seekerId from list_attended_candidates"),
-      batch:        z.number().optional().describe("Retake batch number. Default: 1"),
+      batch:        z.number().optional().describe("Batch number from list_attended_candidates (the Latest Batch shown). ALWAYS pass this — omitting defaults to 1 (first attempt), not the latest."),
     },
     async ({ assessmentId, seekerId, batch }) => {
       try {
@@ -356,14 +356,14 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const assessment     = r.hyringScreenerAssessment ?? {};
         const seeker         = r.seekerCat ?? {};
         const weights        = assessment.fitScoreWeightAge?.[0] ?? {};
-        const contextResult  = assessment.hyringScreenerContextResult?.[0] ?? {};
-        const context0       = contextResult.context_result?.[0] ?? {};
         const batchNum       = (batch ?? 1) - 1;
+        const contextResult  = assessment.hyringScreenerContextResult?.[batchNum] ?? {};
+        const context0       = contextResult.context_result?.[0] ?? {};
 
         // ── Communication scores ─────────────────────────────────────────────
-        // Two-way: english_score in context_result has pronunciation_score, grammar_score etc. (0-10)
-        // Percentage = value × 10  (same as transformDataVapiIntelligence)
-        const langScore = context0.english_score ?? contextResult.videoAnalysis?.speech_proficiency ?? {};
+        // Primary: speech_proficiency from videoAnalysis (matches frontend exactly, already 0-10 → ×10)
+        // Fallback: english_score in context_result (pronunciation_score, grammar_score etc., 0-10)
+        const langScore = contextResult.videoAnalysis?.speech_proficiency ?? context0.english_score ?? {};
 
         const toCommPct = (v: any) => v != null ? Math.round(parseFloat(String(v)) * 10) : 0;
         const pronPct    = toCommPct(langScore.pronunciation_score ?? langScore.pronunciation);
@@ -420,12 +420,13 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
                   : c.score;
                 const isApplicable = c.score_applicable !== false;
                 const label = !isApplicable ? "Score Not Applicable" : getQuestionLabel(score);
+                const transcript = c.transcript ?? c.candidate_text ?? c.answer ?? "";
+                const startSec = c.candidate?.start ?? c.startTime ?? null;
+                const endSec   = c.candidate?.end   ?? c.endTime   ?? null;
+                const timeRange = startSec != null && endSec != null ? ` [${startSec}s – ${endSec}s]` : "";
                 convLines.push(`    Q${ci + 1}: ${c.question ?? "N/A"}`);
-                convLines.push(`    Score: ${score != null ? score + "/10" : "N/A"} — ${label}`);
-                if (c.answer) {
-                  const ans = String(c.answer);
-                  convLines.push(`    Answer: "${ans.slice(0, 300)}${ans.length > 300 ? "…" : ""}"`);
-                }
+                convLines.push(`    Score: ${score != null ? score + "/10" : "N/A"} — ${label}${timeRange}`);
+                if (transcript) convLines.push(`    Candidate: "${String(transcript)}"`);
                 convLines.push("");
               });
             } else {
@@ -438,12 +439,13 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
             const score = c.isOverwritten && c.overWrittenScore != null ? c.overWrittenScore : c.score;
             const isApplicable = c.score_applicable !== false;
             const label = !isApplicable ? "Score Not Applicable" : getQuestionLabel(score);
+            const transcript = c.transcript ?? c.candidate_text ?? c.answer ?? "";
+            const startSec = c.candidate?.start ?? c.startTime ?? null;
+            const endSec   = c.candidate?.end   ?? c.endTime   ?? null;
+            const timeRange = startSec != null && endSec != null ? ` [${startSec}s – ${endSec}s]` : "";
             convLines.push(`  Q${ci + 1}: ${c.question ?? "N/A"}`);
-            convLines.push(`  Score: ${score != null ? score + "/10" : "N/A"} — ${label}`);
-            if (c.answer) {
-              const ans = String(c.answer);
-              convLines.push(`  Answer: "${ans.slice(0, 300)}${ans.length > 300 ? "…" : ""}"`);
-            }
+            convLines.push(`  Score: ${score != null ? score + "/10" : "N/A"} — ${label}${timeRange}`);
+            if (transcript) convLines.push(`  Candidate: "${String(transcript)}"`);
             convLines.push("");
           });
         }
@@ -473,18 +475,10 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           feedbackText       ? `  Feedback        : "${feedbackText}"` : "",
           ``,
           `┌─ SCORES ───────────────────────────────`,
-          `  Technical Score : ${scoreLine(techPct)}`,
           `  Fit Score       : ${fitLine(fitPct)}`,
-          `    └ Weights → Technical: ${wTech}% | Communication: ${wComm}%`,
-          ``,
-          `┌─ COMMUNICATION BREAKDOWN ──────────────`,
-          `  Pronunciation      : ${pronPct}%  — ${getScoreLabel(pronPct)}`,
-          `  Grammar            : ${gramPct}%  — ${getScoreLabel(gramPct)}`,
-          `  Vocabulary         : ${vocabPct}%  — ${getScoreLabel(vocabPct)}`,
-          `  Fluency            : ${fluencyPct}%  — ${getScoreLabel(fluencyPct)}`,
-          `  Minimal Filler Words: ${fillerPct}% — ${getScoreLabel(fillerPct)}`,
-          `  Overall Comm Avg   : ${commAvgPct}% — ${getScoreLabel(commAvgPct)}`,
-          `  Accent             : ${accentText}`,
+          `  Technical Score : ${scoreLine(techPct)}`,
+          `  Communication   : ${scoreLine(commAvgPct)}`,
+          `  Accent          : ${accentText}`,
           ``,
           `┌─ AI SUMMARY ───────────────────────────`,
           aiSummary,
@@ -513,7 +507,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.number().describe("Candidate seekerId from list_attended_candidates"),
-      batch:        z.number().optional().describe("Retake batch number. Default: 1"),
+      batch:        z.number().optional().describe("Batch number from list_attended_candidates (the Latest Batch shown). ALWAYS pass this — omitting defaults to 1 (first attempt), not the latest."),
     },
     async ({ assessmentId, seekerId, batch }) => {
       try {
@@ -523,12 +517,11 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           batch: batch ?? 1,
         });
 
-        // Response tuple: [result, [], result_stats, sums, final_score]
+        // Response tuple: [result, [], result_stats, unused, final_scores]
         const raw: any[]  = res.data?.data ?? [];
         const r           = Array.isArray(raw) ? raw[0] : raw;   // main result
         const resultStats = Array.isArray(raw) ? raw[2] : null;  // { _count }
-        const sums        = Array.isArray(raw) ? raw[3] : null;  // { codeQuality, problemSolving, codeOptimization, score }
-        const finalScore  = Array.isArray(raw) ? raw[4] : null;  // final score breakdown
+        const sums        = Array.isArray(raw) ? raw[4] : null;  // { score, codeQuality, problemSolving, codeOptimization } — raw[4] per frontend
 
         if (!r) {
           return { content: [{ type: "text" as const, text: "No result found for this candidate." }] };
@@ -537,9 +530,9 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         const assessment   = r.hyringScreenerAssessment ?? {};
         const seeker       = r.seekerCat ?? {};
         const weights      = assessment.fitScoreWeightAge?.[0] ?? {};
-        const videoResult  = assessment.HyringScreenerVideoAnalysisResult?.[0] ?? {};
-        const codingQs: any[] = assessment.HyringScreenerCodingQuestions ?? [];
         const batchNum     = (batch ?? 1) - 1;
+        const videoResult  = assessment.HyringScreenerVideoAnalysisResult?.[batchNum] ?? {};
+        const codingQs: any[] = assessment.HyringScreenerCodingQuestions ?? [];
         const answeredCount = resultStats?._count ?? codingQs.length;
 
         // ── Aggregate scores (pre-calculated by backend in raw[3]) ────────────
@@ -573,17 +566,17 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         // ── Per-question breakdown ────────────────────────────────────────────
         const qLines = codingQs.map((q: any, i: number) => {
           const ans = q.HyringScreenerCodingAnswers?.[batchNum] ?? q.answers?.[batchNum] ?? {};
-          const cq  = ans.codeQuality      ?? q.codeQuality      ?? null;
-          const ps  = ans.problemSolving   ?? q.problemSolving   ?? null;
-          const co  = ans.codeOptimization ?? q.codeOptimization ?? null;
-          const labelFor = (v: number | null) => v != null ? `${v}% — ${getScoreLabel(v)}` : "N/A";
-          const code = ans.code ?? ans.solution ?? "";
+          // Per-question fields: score (0-10), understand_score (0-10), answerCode, isOverwritten, overWrittenScore
+          const rawScore = ans.isOverwritten && ans.overWrittenScore != null
+            ? ans.overWrittenScore
+            : (ans.score ?? null);
+          const understandScore = ans.understand_score ?? null;
+          const code = ans.answerCode ?? ans.code ?? ans.solution ?? "";
           return [
             `  Q${i + 1}: ${q.question ?? q.concept ?? "N/A"}`,
             `  Type: ${q.codingType ?? "N/A"} | Exercise: ${q.questionType ?? "N/A"} | Duration: ${na(q.duration)} min | Lang: ${na(q.language)}`,
-            `  Code Quality     : ${labelFor(cq)}`,
-            `  Problem Solving  : ${labelFor(ps)}`,
-            `  Optimization     : ${labelFor(co)}`,
+            `  Score            : ${rawScore != null ? rawScore + "/10 — " + getQuestionLabel(rawScore) : "N/A"}`,
+            understandScore != null ? `  Understanding    : ${understandScore}/10 — ${getQuestionLabel(understandScore)}` : "",
             code ? `  Submitted Code   :\n${"    " + String(code).split("\n").slice(0, 20).join("\n    ")}` : "",
           ].filter(Boolean).join("\n");
         });
@@ -613,11 +606,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
           feedbackText       ? `  Feedback        : "${feedbackText}"` : "",
           ``,
           `┌─ SCORES ───────────────────────────────`,
-          `  Overall Score        : ${na(r.totalScore)}`,
-          fitPct != null
-            ? `  Fit Score            : ${fitLine(fitPct)}`
-            : `  Fit Score            : N/A`,
-          `    └ Weights → Code Quality: ${wCQ}% | Problem Solving: ${wPS}% | Optimization: ${wCO}%`,
+          `  Fit Score            : ${fitPct != null ? fitLine(fitPct) : "N/A"}`,
           `  Avg Code Quality     : ${aggCQ != null ? `${aggCQ}% — ${getScoreLabel(aggCQ)}` : "N/A"}`,
           `  Avg Problem Solving  : ${aggPS != null ? `${aggPS}% — ${getScoreLabel(aggPS)}` : "N/A"}`,
           `  Avg Optimization     : ${aggCO != null ? `${aggCO}% — ${getScoreLabel(aggCO)}` : "N/A"}`,
@@ -671,14 +660,15 @@ batch is the attempt number (1 = first attempt).`,
         const cog        = d.cognitive?.[0]?.cognitive_metrics ?? {};
         const results: any[] = d.results ?? [];
 
-        // CEFR level from totalScore
+        // CEFR level from totalScore — matches frontend english-level-card.jsx LEVEL_CONFIG exactly
+        // A1: 0-20, A2: 21-40, B1: 41-60, B2: 61-75, C1: 76-90, C2: 91-100
         const score = d.totalScore ?? 0;
         const cefr =
-          score >= 90 ? "C2 (Mastery)" :
-          score >= 80 ? "C1 (Advanced)" :
-          score >= 70 ? "B2 (Upper-Intermediate)" :
-          score >= 60 ? "B1 (Intermediate)" :
-          score >= 50 ? "A2 (Elementary)" :
+          score >= 91 ? "C2 (Mastery)" :
+          score >= 76 ? "C1 (Advanced)" :
+          score >= 61 ? "B2 (Upper-Intermediate)" :
+          score >= 41 ? "B1 (Intermediate)" :
+          score >= 21 ? "A2 (Elementary)" :
                         "A1 (Beginner)";
 
         // Language dimension scores (0-10 scale → × 10 for %)
@@ -706,12 +696,14 @@ batch is the attempt number (1 = first attempt).`,
           const unclear    = (r.unclear_words_count?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
           const grammar    = (r.tense_article_misuse_count?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
           const parasitic  = (r.parasitic_words?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
+          const transcript = r.transcript ?? r.candidate_text ?? "";
           return [
             `  Topic ${i + 1}: [${r.candidate_start_sec ?? "?"}s – ${r.candidate_end_sec ?? "?"}s]`,
-            influenced ? `  Mother Tongue Influenced : ${influenced}` : "",
-            unclear    ? `  Unclear Pronunciation    : ${unclear}`    : "",
-            grammar    ? `  Grammar Issues           : ${grammar}`    : "",
-            parasitic  ? `  Filler/Parasitic Words   : ${parasitic}`  : "",
+            transcript  ? `  Transcript               : "${String(transcript)}"` : "",
+            influenced  ? `  Mother Tongue Influenced : ${influenced}` : "",
+            unclear     ? `  Unclear Pronunciation    : ${unclear}`    : "",
+            grammar     ? `  Grammar Issues           : ${grammar}`    : "",
+            parasitic   ? `  Filler/Parasitic Words   : ${parasitic}`  : "",
           ].filter(Boolean).join("\n");
         });
 
@@ -728,21 +720,13 @@ batch is the attempt number (1 = first attempt).`,
           `  SeekerId     : ${na(d.seeker_id)}`,
           `  Batch        : ${batch ?? 1}`,
           `  Status       : ${na(status.assessmentStatus)}`,
-          `  Hiring Stage : ${na(d.hiringStage)}`,
           `  Qualified    : ${d.isQualified ? "Yes ✓" : "No ✗"}`,
           `  Date         : ${na(d.createdAt)}`,
           ``,
-          `┌─ OVERALL SCORE ─────────────────────────`,
-          `  Total Score : ${na(score)}% → ${cefr}`,
-          ``,
-          `┌─ LANGUAGE BREAKDOWN ───────────────────`,
-          `  Fluency            : ${fluencyPct}%  — ${getScoreLabel(fluencyPct)}`,
-          `  Grammar            : ${gramPct}%  — ${getScoreLabel(gramPct)}`,
-          `  Pronunciation      : ${pronPct}%  — ${getScoreLabel(pronPct)}`,
-          `  Vocabulary         : ${vocabPct}%  — ${getScoreLabel(vocabPct)}`,
-          `  Minimal Filler Words: ${fillerPct}% — ${getScoreLabel(fillerPct)}`,
-          `  Mother Tongue Influence: ${mtPct}% — ${getScoreLabel(mtPct)}`,
-          `  Accent             : ${accentText}`,
+          `┌─ SCORES ───────────────────────────────`,
+          `  Total Score   : ${na(score)}% — ${cefr}`,
+          `  Communication : ${getScoreLabel(score)}`,
+          `  Accent        : ${accentText}`,
           ``,
           `┌─ AI SUMMARY ───────────────────────────`,
           aiSummary,

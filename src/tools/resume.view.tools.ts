@@ -125,9 +125,9 @@ export function registerResumeViewTools(server: McpServer) {
           const name     = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A";
           const email    = seeker.email ?? c.email ?? "N/A";
           const statusId = c.id ?? c.statusId ?? "N/A";
-          const stage    = c.hiringStage ?? "N/A";
           const fitScore = c.fitScore ?? c.score ?? "N/A";
-          return `${i + 1}. [StatusId: ${statusId}] ${name} <${email}>\n   Fit Score: ${fitScore} | Stage: ${stage}`;
+          const qualified = c.isQualified != null ? (c.isQualified ? "Qualified ✓" : "Not Qualified ✗") : "N/A";
+          return `${i + 1}. [StatusId: ${statusId}] ${name} <${email}>\n   Fit Score: ${fitScore} | ${qualified}`;
         });
 
         const hint = `\nUse StatusId with get_resume_report to view the full resume screening report.`;
@@ -148,7 +148,7 @@ export function registerResumeViewTools(server: McpServer) {
   authedTool(
     server,
     "get_resume_report",
-    "Returns the full resume screening report for a candidate: fit score, criteria match, must-have checks.",
+    "Returns the full resume screening report for a candidate: fit score, criteria match by type (MUST_HAVE/NICE_TO_HAVE/STARRED), skills matched, experience, AI feedback, and resume download link.",
     {
       statusId: z.string().describe("HyringScreenerStatus ID from list_resume_candidates"),
     },
@@ -172,18 +172,66 @@ export function registerResumeViewTools(server: McpServer) {
 
         const name = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A";
 
-        // ── Criteria breakdown ──────────────────────────────────────────────
-        const criteriaLines = criteria.map((c: any, i: number) => {
-          const mustHave = c.mustHave ? "✓ MUST HAVE" : "Optional";
-          const matched  = c.isMatched ?? c.matched;
-          const match    = matched === true ? "Matched ✓" : matched === false ? "Not Matched ✗" : "N/A";
-          return `  ${i + 1}. ${c.keyword ?? c.criteria ?? "N/A"} [${mustHave}] — ${match}`;
-        });
-
-        const fitScore  = r?.fitScore ?? r?.totalScore ?? "N/A";
-        const fitLabel  = typeof fitScore === "number"
+        // ── Fit score ─────────────────────────────────────────────────────────
+        const fitScore = r?.fitScore ?? r?.totalScore ?? r?.matchPercentage ?? null;
+        const fitLabel = typeof fitScore === "number"
           ? (fitScore >= 76 ? "STRONG FIT" : fitScore >= 51 ? "GOOD FIT" : fitScore >= 26 ? "MODERATE FIT" : "WEAK FIT")
           : "N/A";
+
+        // ── Criteria breakdown ────────────────────────────────────────────────
+        // Backend stores type: "MUST_HAVE" | "NICE_TO_HAVE" | "STARRED"
+        const mustHaveCriteria  = criteria.filter((c: any) => c.type === "MUST_HAVE"  || c.mustHave === true);
+        const niceToHave        = criteria.filter((c: any) => c.type === "NICE_TO_HAVE");
+        const starred           = criteria.filter((c: any) => c.type === "STARRED");
+        const other             = criteria.filter((c: any) => !c.type && c.mustHave !== true && !c.mustHave);
+
+        const mustHaveMatched   = mustHaveCriteria.filter((c: any) => c.isMatched ?? c.matched).length;
+        const allMustHaveMet    = mustHaveCriteria.length > 0 && mustHaveMatched === mustHaveCriteria.length;
+
+        function criteriaLine(c: any, i: number, prefix: string): string {
+          const matched = c.isMatched ?? c.matched;
+          const match   = matched === true ? "✅ Matched" : matched === false ? "❌ Not Matched" : "— N/A";
+          const text    = c.keyword ?? c.criteria ?? c.text ?? "N/A";
+          const evidence = c.evidence ?? c.reason ?? "";
+          return [
+            `  ${i + 1}. [${prefix}] ${text} — ${match}`,
+            evidence ? `     Evidence: ${evidence}` : "",
+          ].filter(Boolean).join("\n");
+        }
+
+        const criteriaLines: string[] = [];
+        if (mustHaveCriteria.length) {
+          criteriaLines.push("  🔴 MUST HAVE:");
+          mustHaveCriteria.forEach((c: any, i: number) => criteriaLines.push(criteriaLine(c, i + 1, "MUST HAVE")));
+        }
+        if (starred.length) {
+          criteriaLines.push("  ⭐ STARRED:");
+          starred.forEach((c: any, i: number) => criteriaLines.push(criteriaLine(c, i + 1, "STARRED")));
+        }
+        if (niceToHave.length) {
+          criteriaLines.push("  🟡 NICE TO HAVE:");
+          niceToHave.forEach((c: any, i: number) => criteriaLines.push(criteriaLine(c, i + 1, "NICE TO HAVE")));
+        }
+        if (other.length) {
+          criteriaLines.push("  Other:");
+          other.forEach((c: any, i: number) => criteriaLines.push(criteriaLine(c, i + 1, "OTHER")));
+        }
+
+        // ── Skills analysis ───────────────────────────────────────────────────
+        const skillsMatched : string[] = r?.skillsMatched  ?? [];
+        const skillsNotFound: string[] = r?.skillsNotFound ?? r?.skillsMissing ?? [];
+        const experienceYears = r?.experienceYears ?? seeker.yearOfExperience ?? null;
+
+        // ── Extracted resume data ─────────────────────────────────────────────
+        const currentRole    = r?.extractedData?.currentRole    ?? seeker.currentDesignation ?? null;
+        const currentCompany = r?.extractedData?.currentCompany ?? seeker.currentCompany     ?? null;
+        const education      = r?.extractedData?.education      ?? null;
+
+        // ── AI feedback ───────────────────────────────────────────────────────
+        const aiFeedback = r?.feedback ?? r?.aiFeedback ?? null;
+
+        // ── Resume download link ──────────────────────────────────────────────
+        const resumeUrl = r?.resume_url ?? r?.resumeUrl ?? seeker.resumeUrl ?? null;
 
         const lines = [
           `╔══════════════════════════════════════╗`,
@@ -196,41 +244,29 @@ export function registerResumeViewTools(server: McpServer) {
           `  Name         : ${name}`,
           `  Email        : ${seeker.email ?? "N/A"}`,
           `  StatusId     : ${statusId}`,
+          currentRole    ? `  Current Role    : ${currentRole}`    : "",
+          currentCompany ? `  Current Company : ${currentCompany}` : "",
+          education      ? `  Education       : ${education}`      : "",
+          experienceYears != null ? `  Experience      : ${experienceYears} year(s)` : "",
           `  Status       : ${r?.assessmentStatus ?? "N/A"}`,
-          `  Hiring Stage : ${r?.hiringStage ?? "N/A"}`,
-          `  Date         : ${r?.createdAt ?? "N/A"}`,
+          `  Submitted    : ${r?.createdAt ?? "N/A"}`,
+          resumeUrl      ? `  Resume URL      : ${resumeUrl}` : "",
           ``,
           `┌─ FIT SCORE ────────────────────────────`,
-          `  Fit Score : ${fitScore}% — ${fitLabel}`,
+          `  Fit Score : ${fitScore != null ? fitScore + "%" : "N/A"} — ${fitLabel}`,
+          `  Qualification: ${allMustHaveMet ? "✅ Qualified (all MUST HAVE met)" : mustHaveCriteria.length ? `❌ Not Qualified (${mustHaveMatched}/${mustHaveCriteria.length} MUST HAVE met)` : "N/A"}`,
+          ``,
+          skillsMatched.length  ? `┌─ SKILLS MATCHED ───────────────────────\n  ${skillsMatched.join(", ")}` : "",
+          skillsNotFound.length ? `┌─ SKILLS NOT FOUND ─────────────────────\n  ${skillsNotFound.join(", ")}` : "",
           ``,
           `┌─ SCREENING CRITERIA (${criteria.length}) ──────────────`,
           ...criteriaLines,
+          ``,
+          `┌─ AI FEEDBACK ──────────────────────────`,
+          aiFeedback ?? "N/A",
         ].filter((l: string) => l !== "");
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
-      } catch (err) {
-        return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
-      }
-    }
-  );
-
-  // ── update_resume_hiring_stage ──────────────────────────────────────────────
-  authedTool(
-    server,
-    "update_resume_hiring_stage",
-    "Updates the hiring stage for a resume screener candidate.",
-    {
-      statusId:    z.string().describe("HyringScreenerStatus ID from list_resume_candidates"),
-      hiringStage: z.string().describe("New hiring stage value, e.g. 'shortlisted', 'rejected', 'hired'"),
-    },
-    async ({ statusId, hiringStage }) => {
-      try {
-        const employerId = await getEmployerIdFromAPI();
-        await screenerClient.patch(`/details/employer/resume/status-change/${employerId}`, {
-          statusId,
-          hiringStage,
-        });
-        return { content: [{ type: "text" as const, text: `Hiring stage updated to "${hiringStage}" for status ${statusId}.` }] };
       } catch (err) {
         return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
       }
@@ -241,19 +277,19 @@ export function registerResumeViewTools(server: McpServer) {
   authedTool(
     server,
     "send_resume_reminder",
-    "Sends a reminder to invited resume screener candidates who haven't submitted their resume.",
+    "Sends a reminder to an invited resume screener candidate who hasn't submitted their resume.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
-      seekerIds:    z.array(z.number()).describe("Array of seekerIds to send reminders to"),
+      seekerId:     z.number().describe("seekerId of the candidate to remind"),
     },
-    async ({ assessmentId, seekerIds }) => {
+    async ({ assessmentId, seekerId }) => {
       try {
         const employerId = await getEmployerIdFromAPI();
         await screenerClient.patch(`/details/employer/resume/invite/send-reminder/${employerId}`, {
           assessmentId,
-          seekerIds,
+          seekerId,
         });
-        return { content: [{ type: "text" as const, text: `Reminder sent to ${seekerIds.length} candidate(s).` }] };
+        return { content: [{ type: "text" as const, text: `Reminder sent to candidate (seekerId: ${seekerId}).` }] };
       } catch (err) {
         return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
       }
