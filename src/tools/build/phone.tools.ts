@@ -175,7 +175,8 @@ then call configure_assessment and publish_assessment to go live.`,
     "generate_phone_questions",
     `Generates AI-suggested phone screening questions based on the job description.
 
-Returns suggested questions of the requested types. Use add_phone_question to add them to the assessment.`,
+Returns suggested questions of the requested types. Use add_phone_question to add them to the assessment.
+Note: RATING questions use a 0–10 scale. When adding RATING questions, question text must say "scale of 1 to 10" and primaryValue must be on the 0–10 scale.`,
     {
       assessmentId: z.string().describe("Assessment UUID"),
       types: z
@@ -297,7 +298,7 @@ Returns suggested questions of the requested types. Use add_phone_question to ad
 
 Question types and their required fields:
 - YES_NO  → yesOrNo: "YES" | "NO" | "MAYBE"  (expected answer)
-- RATING  → primaryValue: 1–5  (minimum acceptable rating)
+- RATING  → scale is always 0–10. Question text must say "scale of 1 to 10". primaryValue: min acceptable (0–10), secondaryValue: max acceptable (default 10)
 - NUMERIC → operator + metric + primaryValue (+ secondaryValue if operator is BETWEEN)
 
 Priority: MUST_HAVE (disqualifying) | NICE_TO_HAVE | OPTIONAL`,
@@ -323,12 +324,12 @@ Priority: MUST_HAVE (disqualifying) | NICE_TO_HAVE | OPTIONAL`,
         .number()
         .optional()
         .describe(
-          "For RATING: minimum acceptable rating (1–5). For NUMERIC: comparison value",
+          "For RATING: min of acceptable range (0–10). For NUMERIC: comparison value",
         ),
       secondaryValue: z
         .number()
         .optional()
-        .describe("For NUMERIC BETWEEN only: upper bound of the range"),
+        .describe("For RATING: max of acceptable range (0–10, default 10). For NUMERIC BETWEEN: upper bound"),
       operator: z
         .enum([
           "EQUAL",
@@ -379,7 +380,8 @@ Priority: MUST_HAVE (disqualifying) | NICE_TO_HAVE | OPTIONAL`,
 
         if (type === "YES_NO" && yesOrNo) payload.yesOrNo = yesOrNo;
         if (primaryValue != null) payload.primaryValue = primaryValue;
-        if (secondaryValue != null) payload.SecondaryValue = secondaryValue;
+        if (type === "RATING") payload.SecondaryValue = secondaryValue ?? 10;
+        else if (secondaryValue != null) payload.SecondaryValue = secondaryValue;
         if (operator) payload.operator = operator;
         if (metric) payload.metric = metric;
         if (currency) payload.currency = currency;

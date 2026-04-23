@@ -78,10 +78,6 @@ Assessment constraint (flexi only):
         .describe(
           "Override interview duration in seconds. If omitted, auto-calculated from questions (fixed/coding) and rounded to nearest slot: 600/900/1200/1500/3600",
         ),
-      retakeAllowed: z
-        .boolean()
-        .optional()
-        .describe("Allow retakes. Default: true"),
       candidateVideo: z
         .boolean()
         .optional()
@@ -151,7 +147,6 @@ Assessment constraint (flexi only):
       scheduleStart,
       scheduleEnd,
       interviewTime,
-      retakeAllowed,
       candidateVideo,
       enableScreenShare,
       tabChangeDetection,
@@ -233,7 +228,7 @@ Assessment constraint (flexi only):
           assessmentId,
           assessmentConstraint: assessmentConstraint ?? "NO_EXPIRY",
           interviewTime: resolvedInterviewTime,
-          retakeAssessment: retakeAllowed ?? true,
+          retakeAssessment: true,
           retakeQuestion: "ONE_RETAKE",
           candidateVideo: candidateVideo ?? true,
           enableScreenShare: enableScreenShare ?? true,
@@ -299,7 +294,7 @@ Assessment constraint (flexi only):
           content: [
             {
               type: "text" as const,
-              text: `Assessment ${assessmentId} configured.\nAvailability: ${availability ?? "flexi"} | Constraint: ${assessmentConstraint ?? "NO_EXPIRY"}\nInterview time: ${resolvedInterviewTime}s (${resolvedInterviewTime / 60} min) | Retake: ${retakeAllowed ?? true}\n\nNext: publish_assessment`,
+              text: `Assessment ${assessmentId} configured.\nAvailability: ${availability ?? "flexi"} | Constraint: ${assessmentConstraint ?? "NO_EXPIRY"}\n\nNext: publish_assessment`,
             },
           ],
         };
@@ -391,10 +386,22 @@ Actions:
       action: z
         .enum(["PUBLISHED", "PAUSED", "CLOSED", "ARCHIVED"])
         .describe("Action to perform"),
+      interviewType: z
+        .enum(["fixed", "dynamic", "coding", "verbal", "phone", "resume"])
+        .optional()
+        .describe("Interview type — required to trigger audio generation for fixed (one-way) assessments"),
     },
-    async ({ assessmentId, action }) => {
+    async ({ assessmentId, action, interviewType }) => {
       try {
         const employerId = await getEmployerIdFromAPI();
+
+        // Audio processor generates TTS audio for fixed (one-way) questions only
+        if (action === "PUBLISHED" && interviewType === "fixed") {
+          await screenerClient.post("/employer/audio-processor", {
+            assessmentUuid: assessmentId,
+            isEdit: false,
+          });
+        }
 
         await screenerClient.patch(
           `/employer/assessment/status/${employerId}`,

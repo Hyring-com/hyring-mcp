@@ -5,7 +5,6 @@ import {
   extractError,
   getEmployerIdFromAPI,
 } from "../../api/screener.client";
-import { phoneClient, extractPhoneError } from "../../api/phone.client";
 import { authedTool } from "../../server";
 
 export function registerResumeBuildTools(server: McpServer) {
@@ -15,7 +14,7 @@ export function registerResumeBuildTools(server: McpServer) {
     "create_resume_assessment",
     `Creates a new AI Resume Screener assessment in three steps: type selection → JD upload → job details.
 
-After creation, set screening criteria via get_criteria_suggestions + set_screening_criteria,
+After creation, get criteria suggestions via get_criteria_suggestions and save them via set_screening_criteria,
 then call configure_assessment and publish_assessment to go live.`,
     {
       jobTitle: z.string().describe("Job title, e.g. 'Frontend Developer'"),
@@ -80,7 +79,7 @@ then call configure_assessment and publish_assessment to go live.`,
       try {
         const employerId = await getEmployerIdFromAPI();
 
-        // Step 1: Create assessment record (no aiVoice for resume screener)
+        // Step 1: Create assessment record
         const interviewRes = await screenerClient.post(
           `/employer/assessment/job-interview/${employerId}`,
           {
@@ -169,14 +168,13 @@ then call configure_assessment and publish_assessment to go live.`,
     "get_criteria_suggestions",
     `Fetches AI-suggested screening criteria for a resume screener assessment based on its job description and skills.
 
-Returns a list of suggested criteria (keywords, skills, experience markers) with IDs.
-Pass the returned criteria to set_screening_criteria to save them.`,
+Returns a list of suggested criteria with IDs. Pass the returned criteria (with their IDs) to set_screening_criteria.`,
     {
       assessmentId: z.string().describe("Assessment UUID"),
     },
     async ({ assessmentId }) => {
       try {
-        const res = await phoneClient.get(
+        const res = await screenerClient.get(
           `/details/employer/criteria/suggestions/${assessmentId}`,
         );
 
@@ -188,7 +186,7 @@ Pass the returned criteria to set_screening_criteria to save them.`,
             content: [
               {
                 type: "text" as const,
-                text: "No criteria suggestions returned. Ensure the assessment has a job description and skills.",
+                text: "No criteria suggestions returned. You can set criteria manually using set_screening_criteria with your own keywords.",
               },
             ],
           };
@@ -196,7 +194,7 @@ Pass the returned criteria to set_screening_criteria to save them.`,
 
         const lines = suggestions.map(
           (c: any, i: number) =>
-            `${i + 1}. [ID: ${c.id}] "${c.keyword}"  mustHave: ${c.mustHave ?? false}`,
+            `${i + 1}. [ID: ${c.id}] "${c.keyword}"  mustHave: ${c.mustHave ?? false}  fitScore: ${c.fitScore ?? false}`,
         );
 
         return {
@@ -210,7 +208,7 @@ Pass the returned criteria to set_screening_criteria to save them.`,
       } catch (err) {
         return {
           content: [
-            { type: "text" as const, text: `Error: ${extractPhoneError(err)}` },
+            { type: "text" as const, text: `Error: ${extractError(err)}` },
           ],
         };
       }
@@ -223,13 +221,15 @@ Pass the returned criteria to set_screening_criteria to save them.`,
     "set_screening_criteria",
     `Sets the screening criteria for a resume screener assessment.
 
-Each criterion has:
-- id: from get_criteria_suggestions
+Each criterion must come from get_criteria_suggestions (use the returned IDs).
+- id: criterion ID from get_criteria_suggestions
 - keyword: the keyword/skill to screen for
-- mustHave: true = disqualifying if absent; false = nice-to-have
-- fitScore: true = include in fit score calculation
+- mustHave: true = disqualifying if absent (Must-Have); false = nice-to-have. At least 3 criteria must have mustHave: true.
+- fitScore: true = starred skill, given higher weight in fit score calculation. Maximum 3 criteria can have fitScore: true.
 
-At least 3 criteria must have mustHave: true.`,
+Rules:
+- Minimum 3 criteria must have mustHave: true
+- Maximum 3 criteria can have fitScore: true (starred)`,
     {
       assessmentId: z.string().describe("Assessment UUID"),
       criteria: z
@@ -239,43 +239,40 @@ At least 3 criteria must have mustHave: true.`,
             keyword: z.string().describe("Keyword or skill to screen for"),
             mustHave: z
               .boolean()
-              .describe("true = disqualifying if absent. At least 3 required"),
+              .describe("true = Must-Have (disqualifying if absent). At least 3 required."),
             fitScore: z
               .boolean()
               .optional()
-              .describe("Include in fit score calculation. Default: false"),
+              .describe("true = starred, higher weight in scoring. Maximum 3 allowed. Default: false"),
           }),
         )
         .min(1)
+        .refine(
+          (criteria) => criteria.filter((c) => c.mustHave).length >= 3,
+          { message: "At least 3 criteria must have mustHave: true" },
+        )
+        .refine(
+          (criteria) => criteria.filter((c) => c.fitScore).length <= 3,
+          { message: "Maximum 3 criteria can have fitScore: true (starred)" },
+        )
         .describe("List of criteria to set"),
-      isFirstSave: z
-        .boolean()
-        .optional()
-        .describe(
-          "Set true on initial save to advance status to CRITERIA_DETAILS_UPDATED. Default: true",
-        ),
     },
-    async ({ assessmentId, criteria, isFirstSave }) => {
+    async ({ assessmentId, criteria }) => {
       try {
         const employerId = await getEmployerIdFromAPI();
 
-        const payload: any = {
-          assessmentId,
-          criteria: criteria.map((c: any) => ({
-            id: c.id,
-            keyword: c.keyword,
-            mustHave: c.mustHave,
-            fitScore: c.fitScore ?? false,
-          })),
-        };
-
-        if (isFirstSave !== false) {
-          payload.status = "CRITERIA_DETAILS_UPDATED";
-        }
-
         await screenerClient.patch(
           `/employer/assessment/update-criteria/${employerId}`,
-          payload,
+          {
+            assessmentId,
+            criteria: criteria.map((c: any) => ({
+              id: c.id,
+              keyword: c.keyword,
+              mustHave: c.mustHave,
+              fitScore: c.fitScore ?? false,
+            })),
+            status: "CRITERIA_DETAILS_UPDATED",
+          },
         );
 
         const mustHaveCount = criteria.filter((c: any) => c.mustHave).length;

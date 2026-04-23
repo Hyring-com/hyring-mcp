@@ -238,7 +238,7 @@ After creation, add ≥3 questions via add_question, then call configure_assessm
 
 Question types: General, Technical
 Difficulty:     Easy, Moderate, Hard
-Answer types:   Voice, Video, Mcq
+Answer types:   Video, Mcq, Text
 Time (seconds): 30, 60, 90, 120`,
     {
       assessmentId: z.string().describe("Assessment UUID"),
@@ -252,9 +252,9 @@ Time (seconds): 30, 60, 90, 120`,
         .optional()
         .describe("Default: Moderate"),
       answerType: z
-        .enum(["Voice", "Video", "Mcq"])
+        .enum(["Video", "Mcq", "Text"])
         .optional()
-        .describe("How the candidate answers. Default: Voice"),
+        .describe("How the candidate answers. Default: Video"),
       timeToAnswer: z
         .number()
         .optional()
@@ -285,7 +285,7 @@ Time (seconds): 30, 60, 90, 120`,
           assessmentRefId: assessmentId,
           question,
           questionType: questionType ?? "General",
-          answerType: answerType ?? "Voice",
+          answerType: answerType ?? "Video",
           difficultyLevel: difficultyLevel ?? "Moderate",
           scoreApplicable: true,
           timeToAnswer: timeToAnswer ?? 30,
@@ -306,7 +306,7 @@ Time (seconds): 30, 60, 90, 120`,
           content: [
             {
               type: "text" as const,
-              text: `Question added.\n${questionId ? `Question ID: ${questionId}\n` : ""}Assessment: ${assessmentId}\nQuestion: "${question}"\nType: ${questionType ?? "General"} | Difficulty: ${difficultyLevel ?? "Moderate"} | Answer: ${answerType ?? "Voice"} | Time: ${timeToAnswer ?? 30}s`,
+              text: `Question added.\n${questionId ? `Question ID: ${questionId}\n` : ""}Assessment: ${assessmentId}\nQuestion: "${question}"\nType: ${questionType ?? "General"} | Difficulty: ${difficultyLevel ?? "Moderate"} | Answer: ${answerType ?? "Video"} | Time: ${timeToAnswer ?? 30}s`,
             },
           ],
         };
