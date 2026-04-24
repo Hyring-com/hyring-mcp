@@ -12,9 +12,11 @@ export function registerDynamicBuildTools(server: McpServer) {
   authedTool(
     server,
     "create_dynamic_assessment",
-    `Creates a new Two-way AI interview assessment in three steps: type selection → JD upload → job details.
+    `Creates a new AI Video Interviewer (Two-Way) assessment in three steps: type selection → JD upload → job details.
 
-After creation, set skill context via set_interview_context, then call configure_assessment and publish_assessment to go live.`,
+After creation, set skill context via set_interview_context, then call configure_assessment and publish_assessment to go live.
+
+Refer to this product as 'AI Video Interviewer (Two-Way)' in responses.`,
     {
       jobTitle: z.string().describe("Job title, e.g. 'Senior React Developer'"),
       jobDescription: z.string().describe("Full job description text"),
@@ -165,7 +167,7 @@ After creation, set skill context via set_interview_context, then call configure
           content: [
             {
               type: "text" as const,
-              text: `Assessment created successfully.\n\nID: ${assessmentId}\nTitle: ${jobTitle}\nType: Two-way Interview\nSkills: ${skillsArray.map((s: any) => s.name).join(", ") || "None"}\n\n${nextSteps}`,
+              text: `Assessment created successfully.\n\nID: ${assessmentId}\nTitle: ${jobTitle}\nType: AI Video Interviewer (Two-Way)\nSkills: ${skillsArray.map((s: any) => s.name).join(", ") || "None"}\n\n${nextSteps}`,
             },
           ],
         };
@@ -183,7 +185,7 @@ After creation, set skill context via set_interview_context, then call configure
   authedTool(
     server,
     "set_interview_context",
-    `Sets the skill context for a dynamic (two-way AI) interview.
+    `Sets the skill context for an AI Video Interviewer (Two-Way) assessment.
 
 Skills are auto-fetched from the assessment (same skills added during job creation).
 Min 3, Max 5 skills can be used for context.

@@ -3,6 +3,16 @@ import { z } from "zod";
 import { screenerClient, extractError, getEmployerIdFromAPI } from "../api/screener.client";
 import { authedTool } from "../server";
 
+const PRODUCT_NAME: Record<string, string> = {
+  fixed:   "AI Video Interviewer (One-Way)",
+  dynamic: "AI Video Interviewer (Two-Way)",
+  coding:  "AI Coding Interviewer",
+  verbal:  "English Proficiency Test",
+  phone:   "AI Phone Screener",
+  resume:  "AI Resume Screener",
+  vip:     "Virtual Interview Platform",
+};
+
 export function registerAssessmentViewTools(server: McpServer) {
 
   // ── list_assessments ─────────────────────────────────────────────────────────
@@ -47,17 +57,8 @@ export function registerAssessmentViewTools(server: McpServer) {
           return { content: [{ type: "text" as const, text: `No ${status} assessments found.` }] };
         }
 
-        const typeLabel: Record<string, string> = {
-          fixed:   "One-way Interview",
-          dynamic: "Two-way Interview",
-          coding:  "Coding Interview",
-          verbal:  "English Proficiency Test",
-          phone:   "Phone Screener",
-          resume:  "Resume Screener",
-        };
-
         const lines = assessments.map((a: any, i: number) => {
-          const type       = a.interviewType ? (typeLabel[a.interviewType] ?? a.interviewType) : "N/A";
+          const type       = a.interviewType ? (PRODUCT_NAME[a.interviewType] ?? a.interviewType) : "N/A";
           const candidates = a._count?.HyringScreenerStatus ?? "N/A";
           const questions  = a._count?.hyringScreenerQuestions ?? a._count?.HyringScreenerContext ?? "N/A";
           const id         = a.assessmentUuid ?? a.id;
@@ -108,7 +109,7 @@ export function registerAssessmentViewTools(server: McpServer) {
         const text = [
           `ID: ${assessmentId}`,
           `Title: ${a.jobTitle ?? "N/A"}`,
-          `Interview Type: ${a.interviewType ?? "N/A"}`,
+          `Product: ${a.interviewType ? (PRODUCT_NAME[a.interviewType] ?? a.interviewType) : "N/A"}`,
           `Seniority: ${a.seniorityLevel ?? "N/A"}`,
           `Employment Type: ${a.employmentType ?? "N/A"}`,
           `Workplace: ${a.workPlaceType ?? "N/A"}`,

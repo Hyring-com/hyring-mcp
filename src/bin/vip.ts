@@ -5,11 +5,12 @@ import { registerVipBuildTools } from "../tools/build/vip.tools";
 import { registerVipViewTools } from "../tools/vip.view.tools";
 
 const LABEL = "hyring-mcp-vip";
+const DISPLAY_NAME = "Virtual Interview Platform";
 
 async function main() {
   const server = createServer(
-    LABEL,
-    "Hyring MCP — build VIP Live Interview roles. Create and publish job roles for live human interviews.",
+    DISPLAY_NAME,
+    "Hyring MCP for the Virtual Interview Platform product — create and publish job roles for live human interviews powered by an AI copilot. In all responses refer to this product as 'Virtual Interview Platform'.",
   );
 
   registerAuthTools(server);

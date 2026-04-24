@@ -7,11 +7,12 @@ import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
 import { registerPhoneViewTools } from "../tools/phone.view.tools";
 
 const LABEL = "hyring-mcp-phone";
+const DISPLAY_NAME = "AI Phone Screener";
 
 async function main() {
   const server = createServer(
-    LABEL,
-    "Hyring MCP — build and ship AI Phone Screener assessments. Create assessment, add screening questions (YES/NO, Rating, Numeric), configure, publish, invite candidates.",
+    DISPLAY_NAME,
+    "Hyring MCP for the AI Phone Screener product — create the assessment, add screening questions (YES/NO, Rating, Numeric), configure, publish, and invite candidates. In all responses refer to this product as 'AI Phone Screener'.",
   );
 
   registerAuthTools(server);

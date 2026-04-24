@@ -7,11 +7,12 @@ import { registerSharedBuildTools } from "../tools/build/shared.tools";
 import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
 
 const LABEL = "hyring-mcp-coding";
+const DISPLAY_NAME = "AI Coding Interviewer";
 
 async function main() {
   const server = createServer(
-    LABEL,
-    "Hyring MCP — build and ship Coding interviews. Create assessment, set language, add coding problems, configure, publish, invite candidates.",
+    DISPLAY_NAME,
+    "Hyring MCP for the AI Coding Interviewer product — create the assessment, set language, add coding problems, configure, publish, and invite candidates. In all responses refer to this product as 'AI Coding Interviewer'.",
   );
 
   registerAuthTools(server);

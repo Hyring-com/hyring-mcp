@@ -1,0 +1,30 @@
+{
+  "dxt_version": "0.1",
+  "name": "hyring-mcp",
+  "version": "1.0.0",
+  "display_name": "Hyring",
+  "description": "Hyring AI hiring suite — AI Video Interviewer (One-Way & Two-Way), AI Coding Interviewer, English Proficiency Test, AI Phone Screener, AI Resume Screener, Virtual Interview Platform.",
+  "icon": "icon.png",
+  "long_description": "A single MCP extension that exposes the full Hyring recruitment platform inside Claude. Build and publish assessments, invite candidates, and review candidate reports across all seven Hyring products:\n\n- AI Video Interviewer (One-Way)\n- AI Video Interviewer (Two-Way)\n- AI Coding Interviewer\n- English Proficiency Test\n- AI Phone Screener\n- AI Resume Screener\n- Virtual Interview Platform\n\nAuthenticates with your Hyring employer account via email OTP on first use.",
+  "author": {
+    "name": "Hyring",
+    "email": "surya@hyring.com"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "dist/bin/full.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/bin/full.js"]
+    }
+  },
+  "keywords": [
+    "hyring",
+    "recruitment",
+    "interview",
+    "hiring",
+    "ai-interviewer",
+    "resume-screener",
+    "phone-screener"
+  ]
+}

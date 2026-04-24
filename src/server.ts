@@ -14,6 +14,19 @@ When presenting results from hyring-mcp tools to the user, follow this style:
 - Never dump raw JSON, payloads, or tool arguments. Translate into human-readable summaries.
 - Use plain words over jargon: "published" not "persisted", "invite sent" not "dispatched payload", "live" not "activated".
 - Keep the overall response short — a header line, 3–6 bullets, and a one-line follow-up question is the target shape.
+
+Product naming — always refer to Hyring products by these exact product-page names in every user-facing response. Never use the internal code terms.
+
+  Internal term       → Product name to use
+  fixed / one-way     → AI Video Interviewer (One-Way)
+  dynamic / two-way   → AI Video Interviewer (Two-Way)
+  coding              → AI Coding Interviewer
+  verbal / EPT        → English Proficiency Test
+  phone               → AI Phone Screener
+  resume              → AI Resume Screener
+  VIP / VIP Live      → Virtual Interview Platform
+
+Internal terms may still appear in enum values, tool argument names, or API fields — those stay unchanged, but every sentence you write to the user should use the product name on the right.
 `.trim();
 
 export function createServer(name: string, description: string): McpServer {

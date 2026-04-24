@@ -1,5 +1,5 @@
 // Switch to "PRODUCTION" before publishing to npm / deploying.
-const ENV: "LOCAL" | "DEV" | "PRODUCTION" = "LOCAL";
+const ENV: "LOCAL" | "DEV" | "PRODUCTION" = "PRODUCTION";
 
 export interface Domain {
   screenerApi: string;

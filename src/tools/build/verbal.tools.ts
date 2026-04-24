@@ -12,9 +12,11 @@ export function registerVerbalBuildTools(server: McpServer) {
   authedTool(
     server,
     "create_verbal_assessment",
-    `Creates a new English Proficiency (Verbal) assessment in three steps: type selection → JD upload → job details.
+    `Creates a new English Proficiency Test assessment in three steps: type selection → JD upload → job details.
 
-After creation, set the conversation topics via set_verbal_context, then call configure_assessment and publish_assessment to go live.`,
+After creation, set the conversation topics via set_verbal_context, then call configure_assessment and publish_assessment to go live.
+
+Refer to this product as 'English Proficiency Test' in responses (not 'verbal' or 'EPT').`,
     {
       jobTitle: z.string().describe("Job title, e.g. 'Senior React Developer'"),
       jobDescription: z.string().describe("Full job description text"),
@@ -183,7 +185,7 @@ After creation, set the conversation topics via set_verbal_context, then call co
   authedTool(
     server,
     "set_verbal_context",
-    "Sets the conversation topics for a verbal (English proficiency) assessment.",
+    "Sets the conversation topics for an English Proficiency Test assessment.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       topics: z
@@ -211,7 +213,7 @@ After creation, set the conversation topics via set_verbal_context, then call co
           content: [
             {
               type: "text" as const,
-              text: `Verbal context set for assessment ${assessmentId}.\nTopics: ${topics.join(", ")}\n\nNext: configure_assessment (interviewType: "verbal") → publish_assessment`,
+              text: `English Proficiency Test topics set for assessment ${assessmentId}.\nTopics: ${topics.join(", ")}\n\nNext: configure_assessment (interviewType: "verbal") → publish_assessment`,
             },
           ],
         };

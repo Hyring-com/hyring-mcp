@@ -7,11 +7,12 @@ import { registerSharedBuildTools } from "../tools/build/shared.tools";
 import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
 
 const LABEL = "hyring-mcp-verbal";
+const DISPLAY_NAME = "English Proficiency Test";
 
 async function main() {
   const server = createServer(
-    LABEL,
-    "Hyring MCP — build and ship English Proficiency Tests. Create assessment, set conversation topics, configure, publish, invite candidates.",
+    DISPLAY_NAME,
+    "Hyring MCP for the English Proficiency Test product — create the assessment, set conversation topics, configure, publish, and invite candidates. In all responses refer to this product as 'English Proficiency Test'.",
   );
 
   registerAuthTools(server);

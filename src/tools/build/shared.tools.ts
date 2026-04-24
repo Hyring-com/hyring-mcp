@@ -7,6 +7,16 @@ import {
 } from "../../api/screener.client";
 import { authedTool } from "../../server";
 
+const PRODUCT_NAME: Record<string, string> = {
+  fixed:   "AI Video Interviewer (One-Way)",
+  dynamic: "AI Video Interviewer (Two-Way)",
+  coding:  "AI Coding Interviewer",
+  verbal:  "English Proficiency Test",
+  phone:   "AI Phone Screener",
+  resume:  "AI Resume Screener",
+  vip:     "Virtual Interview Platform",
+};
+
 // Rounds total question seconds UP to the nearest fixed slot
 // Slots (from UI): 10min=600, 15min=900, 20min=1200, 25min=1500, 60min=3600
 function roundToSlot(totalSeconds: number): number {
@@ -76,7 +86,7 @@ Assessment constraint (flexi only):
         .number()
         .optional()
         .describe(
-          "Override interview duration in seconds. If omitted, auto-calculated from questions (fixed/coding) and rounded to nearest slot: 600/900/1200/1500/3600",
+          "Override interview duration in seconds. If omitted, auto-calculated from questions (AI Video Interviewer One-Way and AI Coding Interviewer) and rounded to nearest slot: 600/900/1200/1500/3600",
         ),
       candidateVideo: z
         .boolean()
@@ -114,12 +124,12 @@ Assessment constraint (flexi only):
         .boolean()
         .optional()
         .describe("WhatsApp notifications. Default: true"),
-      // Verbal (English Proficiency) only
+      // English Proficiency Test only
       qualificationCriteria: z
         .tuple([z.number(), z.number()])
         .optional()
         .describe(
-          "Verbal only — pass score range [min, max]. Default: [76, 100]",
+          "English Proficiency Test only — pass score range [min, max]. Default: [76, 100]",
         ),
       verbalWeightAge: z
         .object({
@@ -134,7 +144,7 @@ Assessment constraint (flexi only):
         })
         .optional()
         .describe(
-          "Verbal only — scoring weights per dimension (must sum to 100). Default: equal 20 each",
+          "English Proficiency Test only — scoring weights per dimension (must sum to 100). Default: equal 20 each",
         ),
     },
     async ({
@@ -336,7 +346,7 @@ Assessment constraint (flexi only):
           `=== ASSESSMENT REVIEW ===`,
           `ID:     ${assessmentId}`,
           `Title:  ${data.jobTitle ?? "N/A"}`,
-          `Type:   ${data.interviewType ?? "N/A"}`,
+          `Product: ${data.interviewType ? (PRODUCT_NAME[data.interviewType] ?? data.interviewType) : "N/A"}`,
           `Status: ${data.status ?? "N/A"}`,
           ``,
           `--- Job Details ---`,
@@ -389,7 +399,7 @@ Actions:
       interviewType: z
         .enum(["fixed", "dynamic", "coding", "verbal", "phone", "resume"])
         .optional()
-        .describe("Interview type — required to trigger audio generation for fixed (one-way) assessments"),
+        .describe("Interview type — required to trigger audio generation for AI Video Interviewer (One-Way) assessments"),
     },
     async ({ assessmentId, action, interviewType }) => {
       try {

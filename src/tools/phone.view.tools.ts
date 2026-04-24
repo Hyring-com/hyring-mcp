@@ -50,7 +50,7 @@ export function registerPhoneViewTools(server: McpServer) {
   authedTool(
     server,
     "list_phone_assessments",
-    "Lists Phone Screener assessments for the authenticated employer.",
+    "Lists AI Phone Screener assessments for the authenticated employer. Refer to this product as 'AI Phone Screener' in responses.",
     {
       status: z.enum(["active", "inactive", "drafts", "archived"]).optional()
         .describe("Filter by status. Default: active"),
@@ -79,7 +79,7 @@ export function registerPhoneViewTools(server: McpServer) {
         const totalCount: number  = Array.isArray(raw) && typeof raw[1] === "number" ? raw[1] : assessments.length;
 
         if (!assessments.length) {
-          return { content: [{ type: "text" as const, text: `No ${status} phone assessments found.` }] };
+          return { content: [{ type: "text" as const, text: `No ${status} AI Phone Screener assessments found.` }] };
         }
 
         const lines = assessments.map((a: any, i: number) => {
@@ -88,7 +88,7 @@ export function registerPhoneViewTools(server: McpServer) {
           return `${(page - 1) * take + i + 1}. [ID: ${id}] ${a.jobTitle ?? "Untitled"} — Status: ${a.status ?? "N/A"} | Candidates: ${candidates}`;
         });
 
-        const showing = `Showing ${assessments.length} of ${totalCount} ${status} phone assessment(s) (page ${page}):`;
+        const showing = `Showing ${assessments.length} of ${totalCount} ${status} AI Phone Screener assessment(s) (page ${page}):`;
         const hint    = totalCount > page * take ? `\n\nUse page: ${page + 1} to see more.` : "";
 
         return {
@@ -107,7 +107,7 @@ export function registerPhoneViewTools(server: McpServer) {
   authedTool(
     server,
     "get_phone_assessment_stats",
-    "Returns candidate counts for a Phone Screener assessment by status: attended, invited, started, declined.",
+    "Returns candidate counts for an AI Phone Screener assessment by status: attended, invited, started, declined.",
     { assessmentId: z.string().describe("Assessment UUID") },
     async ({ assessmentId }) => {
       try {
@@ -124,7 +124,7 @@ export function registerPhoneViewTools(server: McpServer) {
         const declined = raw.declined  ?? (Array.isArray(raw) ? raw[3] : "N/A");
 
         const text = [
-          `=== Phone Screener Stats: ${assessmentId} ===`,
+          `=== AI Phone Screener Stats: ${assessmentId} ===`,
           `Attended (Completed): ${attended}`,
           `Invited:              ${invited}`,
           `Started:              ${started}`,
@@ -142,7 +142,7 @@ export function registerPhoneViewTools(server: McpServer) {
   authedTool(
     server,
     "list_phone_candidates",
-    "Lists candidates for a Phone Screener assessment by status. Use the ScreenerId from attended candidates with get_phone_report.",
+    "Lists candidates for an AI Phone Screener assessment by status. Use the ScreenerId from attended candidates with get_phone_report.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       status: z.enum(["attended", "invited", "started", "declined"])
@@ -192,12 +192,14 @@ export function registerPhoneViewTools(server: McpServer) {
   authedTool(
     server,
     "get_phone_report",
-    `Returns the full phone screener call report for a candidate.
+    `Returns the full AI Phone Screener call report for a candidate.
 
 Shows: call success/duration, overall score with label, Interview Worthy status (all MUST_HAVE questions matched), per-question transcript with match status and priority, AI summary, audio recording link.
 
 screenerId is the ScreenerId from list_phone_candidates.
-candidateType is shown in list_phone_candidates — use "active" for candidates with a seeker account, "passive" for phone-only (no account) candidates. Defaults to "active".`,
+candidateType is shown in list_phone_candidates — use "active" for candidates with a seeker account, "passive" for phone-only (no account) candidates. Defaults to "active".
+
+Refer to this product as 'AI Phone Screener' in responses.`,
     {
       screenerId:    z.string().describe("ScreenerId from list_phone_candidates"),
       candidateType: z.enum(["active", "passive"]).optional()
@@ -302,9 +304,9 @@ candidateType is shown in list_phone_candidates — use "active" for candidates 
 
         // ── Build report ──────────────────────────────────────────────────────
         const lines = [
-          `╔══════════════════════════════════════╗`,
-          `║      PHONE SCREENER REPORT           ║`,
-          `╚══════════════════════════════════════╝`,
+          `╔══════════════════════════════════════════════╗`,
+          `║       AI PHONE SCREENER REPORT               ║`,
+          `╚══════════════════════════════════════════════╝`,
           `Assessment : ${na(assessmentData.assessmentUuid)}`,
           `Job Title  : ${na(assessmentData.jobTitle)}`,
           ``,
@@ -353,7 +355,7 @@ candidateType is shown in list_phone_candidates — use "active" for candidates 
   authedTool(
     server,
     "send_phone_reminder",
-    "Sends a reminder to invited phone screener candidates who haven't completed the call.",
+    "Sends a reminder to invited AI Phone Screener candidates who haven't completed the call.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerIds:    z.array(z.number()).describe("Array of seekerIds to send reminders to"),

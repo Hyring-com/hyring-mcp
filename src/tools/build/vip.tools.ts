@@ -9,12 +9,14 @@ export function registerVipBuildTools(server: McpServer) {
   authedTool(
     server,
     "create_vip_assessment",
-    `Creates a new VIP Live Interview job role in two steps: JD upload → job details.
+    `Creates a new Virtual Interview Platform job role in two steps: JD upload → job details.
 
-Unlike other assessment types, VIP assessments are published immediately when job details are saved.
+Unlike other assessment types, Virtual Interview Platform roles are published immediately when job details are saved.
 No separate configure or publish step is needed.
 
-After creation, use invite_candidate to send interview invitations to candidates.`,
+After creation, use invite_candidate to send interview invitations to candidates.
+
+Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or 'VIP Live Interview').`,
     {
       jobTitle: z.string().describe("Job title, e.g. 'Software Developer'"),
       jobDescription: z.string().describe("Full job description text"),
@@ -123,7 +125,7 @@ After creation, use invite_candidate to send interview invitations to candidates
             content: [
               {
                 type: "text" as const,
-                text: "Failed to create VIP assessment: no ID returned from server.",
+                text: "Failed to create Virtual Interview Platform role: no ID returned from server.",
               },
             ],
           };
@@ -172,7 +174,7 @@ After creation, use invite_candidate to send interview invitations to candidates
           content: [
             {
               type: "text" as const,
-              text: `VIP Live Interview role created and published.\n\nID: ${assessmentId}\nTitle: ${jobTitle}\nType: VIP Live Interview\nSkills: ${skillsArray.map((s: any) => s.name).join(", ") || "None"}\n\nThe role is now live. Use invite_candidate to send interview invitations.`,
+              text: `Virtual Interview Platform role created and published.\n\nID: ${assessmentId}\nTitle: ${jobTitle}\nType: Virtual Interview Platform\nSkills: ${skillsArray.map((s: any) => s.name).join(", ") || "None"}\n\nThe role is now live. Use invite_candidate to send interview invitations.`,
             },
           ],
         };

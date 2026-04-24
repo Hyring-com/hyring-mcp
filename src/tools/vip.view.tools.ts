@@ -83,7 +83,7 @@ export function registerVipViewTools(server: McpServer) {
   authedTool(
     server,
     "list_vip_assessments",
-    "Lists VIP Live Interview job roles for the authenticated employer.",
+    "Lists Virtual Interview Platform job roles for the authenticated employer. Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP').",
     {
       status: z.enum(["active", "inactive", "drafts", "archived"]).optional()
         .describe("Filter by status. Default: active"),
@@ -104,7 +104,7 @@ export function registerVipViewTools(server: McpServer) {
           : assessments.length;
 
         if (!assessments.length) {
-          return { content: [{ type: "text" as const, text: `No ${status} VIP job roles found.` }] };
+          return { content: [{ type: "text" as const, text: `No ${status} Virtual Interview Platform job roles found.` }] };
         }
 
         const lines = assessments.map((a: any, i: number) => {
@@ -112,7 +112,7 @@ export function registerVipViewTools(server: McpServer) {
           return `${(page - 1) * take + i + 1}. [ID: ${id}] ${a.jobTitle ?? "Untitled"} — Status: ${a.status ?? "N/A"} | ${a.jobLocationCity ?? ""}, ${a.jobLocationCountry ?? ""}`;
         });
 
-        const showing = `Showing ${assessments.length} of ${totalCount} ${status} VIP job role(s) (page ${page}):`;
+        const showing = `Showing ${assessments.length} of ${totalCount} ${status} Virtual Interview Platform job role(s) (page ${page}):`;
         const hint    = totalCount > page * take ? `\n\nUse page: ${page + 1} to see more.` : "";
 
         return {
@@ -131,7 +131,7 @@ export function registerVipViewTools(server: McpServer) {
   authedTool(
     server,
     "get_vip_assessment_stats",
-    "Returns interview counts for a VIP job role by status: completed, scheduled, cancelled.",
+    "Returns interview counts for a Virtual Interview Platform job role by status: completed, scheduled, cancelled.",
     { assessmentId: z.string().describe("Assessment UUID from list_vip_assessments") },
     async ({ assessmentId }) => {
       try {
@@ -150,7 +150,7 @@ export function registerVipViewTools(server: McpServer) {
         const cancelled  = raw.cancelled  ?? raw[2] ?? "N/A";
 
         const text = [
-          `=== VIP Live Interview Stats: ${assessmentId} ===`,
+          `=== Virtual Interview Platform Stats: ${assessmentId} ===`,
           `Completed:  ${completed}`,
           `Scheduled:  ${scheduled}`,
           `Cancelled:  ${cancelled}`,
@@ -167,7 +167,7 @@ export function registerVipViewTools(server: McpServer) {
   authedTool(
     server,
     "list_vip_interviews",
-    "Lists VIP Live Interviews for a job role by status. Use statusId from completed interviews with get_vip_report.",
+    "Lists Virtual Interview Platform interviews for a job role by status. Use statusId from completed interviews with get_vip_report.",
     {
       assessmentId: z.string().describe("Assessment UUID from list_vip_assessments"),
       status: z.enum(["completed", "scheduled", "cancelled"])
@@ -218,11 +218,13 @@ export function registerVipViewTools(server: McpServer) {
   authedTool(
     server,
     "get_vip_report",
-    `Returns the full VIP Live Interview report for a completed interview.
+    `Returns the full Virtual Interview Platform report for a completed interview.
 
 Shows both the AI Analysis (technical score, communication breakdown, per-skill Q&A, accent, AI summary) and the Interviewer Evaluation (rating, hiring decision, skill ratings, comments).
 
-statusId is the interview StatusId from list_vip_interviews.`,
+statusId is the interview StatusId from list_vip_interviews.
+
+Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or 'VIP Live Interview').`,
     {
       statusId: z.string().describe("Interview status ID from list_vip_interviews"),
     },
@@ -354,9 +356,9 @@ statusId is the interview StatusId from list_vip_interviews.`,
 
         // ── Build report ──────────────────────────────────────────────────────
         const lines = [
-          `╔══════════════════════════════════════╗`,
-          `║     VIP LIVE INTERVIEW REPORT        ║`,
-          `╚══════════════════════════════════════╝`,
+          `╔══════════════════════════════════════════════╗`,
+          `║     VIRTUAL INTERVIEW PLATFORM REPORT        ║`,
+          `╚══════════════════════════════════════════════╝`,
           `StatusId   : ${statusId}`,
           `Job Role   : ${na(vipStatus.title ?? r?.vipAssessment?.jobTitle)}`,
           ``,
@@ -416,7 +418,7 @@ statusId is the interview StatusId from list_vip_interviews.`,
   authedTool(
     server,
     "update_vip_hiring_stage",
-    "Updates the hiring stage for a VIP Live Interview candidate. Use the StatusId from list_vip_interviews.",
+    "Updates the hiring stage for a Virtual Interview Platform candidate. Use the StatusId from list_vip_interviews.",
     {
       statusId:         z.string().describe("Interview StatusId from list_vip_interviews"),
       stage:            z.enum(["SHORTLIST", "REJECT", "HOLD"]).describe("Hiring stage to set: SHORTLIST, REJECT, or HOLD"),

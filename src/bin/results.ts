@@ -9,11 +9,12 @@ import { registerResumeViewTools } from "../tools/resume.view.tools";
 import { registerVipViewTools } from "../tools/vip.view.tools";
 
 const LABEL = "hyring-mcp-results";
+const DISPLAY_NAME = "Hyring Results";
 
 async function main() {
   const server = createServer(
-    LABEL,
-    "Hyring MCP — review candidate results across all products. Supports One-Way, Two-Way, Coding, Verbal, Phone Screener, Resume Screener, and VIP Live Interview reports.",
+    DISPLAY_NAME,
+    "Hyring MCP — review candidate results across all Hyring products. Supports reports for: AI Video Interviewer (One-Way), AI Video Interviewer (Two-Way), AI Coding Interviewer, English Proficiency Test, AI Phone Screener, AI Resume Screener, and Virtual Interview Platform. Always refer to products by these product-page names in responses.",
   );
 
   registerAuthTools(server);

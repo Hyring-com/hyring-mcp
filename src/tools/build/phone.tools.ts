@@ -16,7 +16,9 @@ export function registerPhoneBuildTools(server: McpServer) {
     `Creates a new AI Phone Screener assessment in three steps: type selection → JD upload → job details.
 
 After creation, add ≥3 questions via add_phone_question (or generate via generate_phone_questions),
-then call configure_assessment and publish_assessment to go live.`,
+then call configure_assessment and publish_assessment to go live.
+
+Refer to this product as 'AI Phone Screener' in responses.`,
     {
       jobTitle: z.string().describe("Job title, e.g. 'Frontend Developer'"),
       jobDescription: z.string().describe("Full job description text"),
@@ -241,7 +243,7 @@ Note: RATING questions use a 0–10 scale. When adding RATING questions, questio
   authedTool(
     server,
     "list_phone_questions",
-    "Lists all questions for a phone screener assessment. Returns question IDs needed for edit_phone_question and delete_phone_question.",
+    "Lists all questions for an AI Phone Screener assessment. Returns question IDs needed for edit_phone_question and delete_phone_question.",
     { assessmentId: z.string().describe("Assessment UUID") },
     async ({ assessmentId }) => {
       try {
@@ -294,7 +296,7 @@ Note: RATING questions use a 0–10 scale. When adding RATING questions, questio
   authedTool(
     server,
     "add_phone_question",
-    `Adds a question to a phone screener assessment. At least 3 questions are required before publishing.
+    `Adds a question to an AI Phone Screener assessment. At least 3 questions are required before publishing.
 
 Question types and their required fields:
 - YES_NO  → yesOrNo: "YES" | "NO" | "MAYBE"  (expected answer)
@@ -411,7 +413,7 @@ Priority: MUST_HAVE (disqualifying) | NICE_TO_HAVE | OPTIONAL`,
   authedTool(
     server,
     "edit_phone_question",
-    "Edits an existing phone screener question. Use list_phone_questions to get question IDs.",
+    "Edits an existing AI Phone Screener question. Use list_phone_questions to get question IDs.",
     {
       questionId: z.number().describe("Question ID from list_phone_questions"),
       question: z.string().optional().describe("Updated question text"),
@@ -493,7 +495,7 @@ Priority: MUST_HAVE (disqualifying) | NICE_TO_HAVE | OPTIONAL`,
   authedTool(
     server,
     "delete_phone_question",
-    "Deletes a question from a phone screener assessment. Use list_phone_questions to get question IDs.",
+    "Deletes a question from an AI Phone Screener assessment. Use list_phone_questions to get question IDs.",
     {
       questionId: z.number().describe("Question ID from list_phone_questions"),
     },

@@ -116,13 +116,15 @@ export function registerCandidateResultsTools(server: McpServer) {
     "list_attended_candidates",
     `Lists candidates who have completed an assessment, with their scores.
 
-- fixed/dynamic/coding: shows Hiring Stage (SHORTLISTED / HIRED / REJECTED / ON_HOLD / NOT_YET_EVALUATED)
-- verbal (EPT): shows Qualified (Yes/No) — no hiring stage for EPT
+- AI Video Interviewer (One-Way) [fixed] / AI Video Interviewer (Two-Way) [dynamic] / AI Coding Interviewer [coding]: shows Hiring Stage (SHORTLISTED / HIRED / REJECTED / ON_HOLD / NOT_YET_EVALUATED)
+- English Proficiency Test [verbal]: shows Qualified (Yes/No) — no hiring stage
 
 The Batch number shown for each candidate is their LATEST attempt. Always pass this batch number to the report tool — if you omit it, the report defaults to batch 1 (first attempt) which may be outdated.
 
-For verbal (EPT) assessments each entry includes a statusId — pass that to get_verbal_report.
-For all other types the seekerId is used with get_fixed_report / get_dynamic_report / get_coding_report.`,
+For English Proficiency Test assessments each entry includes a statusId — pass that to get_verbal_report.
+For all other types the seekerId is used with get_fixed_report / get_dynamic_report / get_coding_report.
+
+When presenting results, always refer to products by their product-page names: "AI Video Interviewer (One-Way)", "AI Video Interviewer (Two-Way)", "AI Coding Interviewer", "English Proficiency Test".`,
     {
       assessmentId:  z.string().describe("Assessment UUID"),
       interviewType: z.enum(["fixed", "dynamic", "coding", "verbal"]).describe("Type of assessment"),
@@ -194,7 +196,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   authedTool(
     server,
     "get_fixed_report",
-    "Returns the full report for a One-Way (fixed) interview candidate: fit score, technical & communication scores with labels, per-question breakdown with transcripts, AI summary, and candidate info.",
+    "Returns the full report for an AI Video Interviewer (One-Way) candidate: fit score, technical & communication scores with labels, per-question breakdown with transcripts, AI summary, and candidate info. Refer to this product as 'AI Video Interviewer (One-Way)' in responses.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.number().describe("Candidate seekerId from list_attended_candidates"),
@@ -310,9 +312,9 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         });
 
         const lines = [
-          `╔══════════════════════════════════════╗`,
-          `║      ONE-WAY INTERVIEW REPORT        ║`,
-          `╚══════════════════════════════════════╝`,
+          `╔══════════════════════════════════════════════╗`,
+          `║   AI VIDEO INTERVIEWER (ONE-WAY) REPORT      ║`,
+          `╚══════════════════════════════════════════════╝`,
           `Assessment : ${assessmentId}`,
           `Job Title  : ${na(assessment.jobTitle)}`,
           ``,
@@ -362,7 +364,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   authedTool(
     server,
     "get_dynamic_report",
-    "Returns the full report for a Two-Way (dynamic AI) interview candidate: fit score, technical & communication scores with labels, per-skill conversation Q&A with transcripts, AI summary.",
+    "Returns the full report for an AI Video Interviewer (Two-Way) candidate: fit score, technical & communication scores with labels, per-skill conversation Q&A with transcripts, AI summary. Refer to this product as 'AI Video Interviewer (Two-Way)' in responses.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.string().describe("Candidate seekerId from list_attended_candidates"),
@@ -505,9 +507,9 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         }
 
         const lines = [
-          `╔══════════════════════════════════════╗`,
-          `║      TWO-WAY INTERVIEW REPORT        ║`,
-          `╚══════════════════════════════════════╝`,
+          `╔══════════════════════════════════════════════╗`,
+          `║   AI VIDEO INTERVIEWER (TWO-WAY) REPORT      ║`,
+          `╚══════════════════════════════════════════════╝`,
           `Assessment : ${assessmentId}`,
           `Job Title  : ${na(assessment.jobTitle)}`,
           ``,
@@ -557,7 +559,7 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   authedTool(
     server,
     "get_coding_report",
-    "Returns the full report for a Coding interview candidate: fit score with label, code quality / problem solving / optimization breakdown, per-question results with labels.",
+    "Returns the full report for an AI Coding Interviewer candidate: fit score with label, code quality / problem solving / optimization breakdown, per-question results with labels. Refer to this product as 'AI Coding Interviewer' in responses.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.number().describe("Candidate seekerId from list_attended_candidates"),
@@ -637,9 +639,9 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
         });
 
         const lines = [
-          `╔══════════════════════════════════════╗`,
-          `║       CODING INTERVIEW REPORT        ║`,
-          `╚══════════════════════════════════════╝`,
+          `╔══════════════════════════════════════════════╗`,
+          `║       AI CODING INTERVIEWER REPORT           ║`,
+          `╚══════════════════════════════════════════════╝`,
           `Assessment : ${assessmentId}`,
           `Job Title  : ${na(assessment.jobTitle)}`,
           ``,
@@ -689,10 +691,12 @@ For all other types the seekerId is used with get_fixed_report / get_dynamic_rep
   authedTool(
     server,
     "get_verbal_report",
-    `Returns the full report for a Verbal/EPT (English Proficiency Test) candidate: CEFR level, language breakdown with labels, accent, AI summary, per-topic word detections.
+    `Returns the full report for an English Proficiency Test candidate: CEFR level, language breakdown with labels, accent, AI summary, per-topic word detections.
 
 statusId is the HyringScreenerStatus ID from list_attended_candidates (not the assessment UUID).
-batch is the attempt number (1 = first attempt).`,
+batch is the attempt number (1 = first attempt).
+
+Refer to this product as 'English Proficiency Test' in responses (not 'verbal' or 'EPT').`,
     {
       statusId: z.string().describe("HyringScreenerStatus ID from list_attended_candidates"),
       batch:    z.number().optional().describe("Attempt number. Default: 1"),
@@ -705,7 +709,7 @@ batch is the attempt number (1 = first attempt).`,
         const d = res.data?.data ?? res.data;
 
         if (!d) {
-          return { content: [{ type: "text" as const, text: "No verbal report found for this candidate." }] };
+          return { content: [{ type: "text" as const, text: "No English Proficiency Test report found for this candidate." }] };
         }
 
         const status     = d.hyringScreenerStatus ?? {};
@@ -790,9 +794,9 @@ batch is the attempt number (1 = first attempt).`,
           : null;
 
         const lines = [
-          `╔══════════════════════════════════════╗`,
-          `║   ENGLISH PROFICIENCY TEST REPORT    ║`,
-          `╚══════════════════════════════════════╝`,
+          `╔══════════════════════════════════════════════╗`,
+          `║     ENGLISH PROFICIENCY TEST REPORT          ║`,
+          `╚══════════════════════════════════════════════╝`,
           `StatusId   : ${statusId}`,
           `Job Title  : ${na(assessment.jobTitle)}`,
           ``,

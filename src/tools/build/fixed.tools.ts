@@ -12,9 +12,11 @@ export function registerFixedBuildTools(server: McpServer) {
   authedTool(
     server,
     "create_fixed_assessment",
-    `Creates a new One-Way (Fixed) interview assessment in three steps: type selection → JD upload → job details.
+    `Creates a new AI Video Interviewer (One-Way) assessment in three steps: type selection → JD upload → job details.
 
-After creation, add ≥3 questions via add_question, then call configure_assessment and publish_assessment to go live.`,
+After creation, add ≥3 questions via add_question, then call configure_assessment and publish_assessment to go live.
+
+Refer to this product as 'AI Video Interviewer (One-Way)' in responses.`,
     {
       jobTitle: z.string().describe("Job title, e.g. 'Senior React Developer'"),
       jobDescription: z.string().describe("Full job description text"),
@@ -165,7 +167,7 @@ After creation, add ≥3 questions via add_question, then call configure_assessm
           content: [
             {
               type: "text" as const,
-              text: `Assessment created successfully.\n\nID: ${assessmentId}\nTitle: ${jobTitle}\nType: One-way Interview\nSkills: ${skillsArray.map((s: any) => s.name).join(", ") || "None"}\n\n${nextSteps}`,
+              text: `Assessment created successfully.\n\nID: ${assessmentId}\nTitle: ${jobTitle}\nType: AI Video Interviewer (One-Way)\nSkills: ${skillsArray.map((s: any) => s.name).join(", ") || "None"}\n\n${nextSteps}`,
             },
           ],
         };
@@ -234,7 +236,7 @@ After creation, add ≥3 questions via add_question, then call configure_assessm
   authedTool(
     server,
     "add_question",
-    `Adds a question to a fixed (one-way) interview assessment. At least 3 questions are required before publishing.
+    `Adds a question to an AI Video Interviewer (One-Way) assessment. At least 3 questions are required before publishing.
 
 Question types: General, Technical
 Difficulty:     Easy, Moderate, Hard

@@ -15,7 +15,9 @@ export function registerResumeBuildTools(server: McpServer) {
     `Creates a new AI Resume Screener assessment in three steps: type selection → JD upload → job details.
 
 After creation, get criteria suggestions via get_criteria_suggestions and save them via set_screening_criteria,
-then call configure_assessment and publish_assessment to go live.`,
+then call configure_assessment and publish_assessment to go live.
+
+Refer to this product as 'AI Resume Screener' in responses.`,
     {
       jobTitle: z.string().describe("Job title, e.g. 'Frontend Developer'"),
       jobDescription: z.string().describe("Full job description text"),
@@ -166,7 +168,7 @@ then call configure_assessment and publish_assessment to go live.`,
   authedTool(
     server,
     "get_criteria_suggestions",
-    `Fetches AI-suggested screening criteria for a resume screener assessment based on its job description and skills.
+    `Fetches AI-suggested screening criteria for an AI Resume Screener assessment based on its job description and skills.
 
 Returns a list of suggested criteria with IDs. Pass the returned criteria (with their IDs) to set_screening_criteria.`,
     {
@@ -219,7 +221,7 @@ Returns a list of suggested criteria with IDs. Pass the returned criteria (with 
   authedTool(
     server,
     "set_screening_criteria",
-    `Sets the screening criteria for a resume screener assessment.
+    `Sets the screening criteria for an AI Resume Screener assessment.
 
 Each criterion must come from get_criteria_suggestions (use the returned IDs).
 - id: criterion ID from get_criteria_suggestions

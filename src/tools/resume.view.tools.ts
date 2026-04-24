@@ -9,7 +9,7 @@ export function registerResumeViewTools(server: McpServer) {
   authedTool(
     server,
     "list_resume_assessments",
-    "Lists Resume Screener assessments for the authenticated employer.",
+    "Lists AI Resume Screener assessments for the authenticated employer. Refer to this product as 'AI Resume Screener' in responses.",
     {
       status: z.enum(["active", "inactive", "drafts", "archived"]).optional()
         .describe("Filter by status. Default: active"),
@@ -38,7 +38,7 @@ export function registerResumeViewTools(server: McpServer) {
         const totalCount: number  = Array.isArray(raw) && typeof raw[1] === "number" ? raw[1] : assessments.length;
 
         if (!assessments.length) {
-          return { content: [{ type: "text" as const, text: `No ${status} resume assessments found.` }] };
+          return { content: [{ type: "text" as const, text: `No ${status} AI Resume Screener assessments found.` }] };
         }
 
         const lines = assessments.map((a: any, i: number) => {
@@ -47,7 +47,7 @@ export function registerResumeViewTools(server: McpServer) {
           return `${(page - 1) * take + i + 1}. [ID: ${id}] ${a.jobTitle ?? "Untitled"} — Status: ${a.status ?? "N/A"} | Candidates: ${candidates}`;
         });
 
-        const showing = `Showing ${assessments.length} of ${totalCount} ${status} resume assessment(s) (page ${page}):`;
+        const showing = `Showing ${assessments.length} of ${totalCount} ${status} AI Resume Screener assessment(s) (page ${page}):`;
         const hint    = totalCount > page * take ? `\n\nUse page: ${page + 1} to see more.` : "";
 
         return {
@@ -66,7 +66,7 @@ export function registerResumeViewTools(server: McpServer) {
   authedTool(
     server,
     "get_resume_assessment_stats",
-    "Returns candidate counts for a Resume Screener assessment by status: all, uploaded, invited, inbound, declined.",
+    "Returns candidate counts for an AI Resume Screener assessment by status: all, uploaded, invited, inbound, declined.",
     { assessmentId: z.string().describe("Assessment UUID") },
     async ({ assessmentId }) => {
       try {
@@ -84,7 +84,7 @@ export function registerResumeViewTools(server: McpServer) {
         const declined = raw.declined ?? raw[4] ?? "N/A";
 
         const text = [
-          `=== Resume Screener Stats: ${assessmentId} ===`,
+          `=== AI Resume Screener Stats: ${assessmentId} ===`,
           `All Candidates: ${all}`,
           `Uploaded:       ${uploaded}`,
           `Invited:        ${invited}`,
@@ -103,7 +103,7 @@ export function registerResumeViewTools(server: McpServer) {
   authedTool(
     server,
     "list_resume_candidates",
-    "Lists candidates for a Resume Screener assessment by status. Use statusId from the list with get_resume_report.",
+    "Lists candidates for an AI Resume Screener assessment by status. Use statusId from the list with get_resume_report.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       status: z.enum(["all", "uploaded", "invited", "inbound", "declined"])
@@ -130,7 +130,7 @@ export function registerResumeViewTools(server: McpServer) {
           return `${i + 1}. [StatusId: ${statusId}] ${name} <${email}>\n   Fit Score: ${fitScore} | ${qualified}`;
         });
 
-        const hint = `\nUse StatusId with get_resume_report to view the full resume screening report.`;
+        const hint = `\nUse StatusId with get_resume_report to view the full AI Resume Screener report.`;
 
         return {
           content: [{
@@ -257,9 +257,9 @@ export function registerResumeViewTools(server: McpServer) {
           : null;
 
         const lines = [
-          `╔══════════════════════════════════════╗`,
-          `║      RESUME SCREENER REPORT          ║`,
-          `╚══════════════════════════════════════╝`,
+          `╔══════════════════════════════════════════════╗`,
+          `║       AI RESUME SCREENER REPORT              ║`,
+          `╚══════════════════════════════════════════════╝`,
           `Assessment : ${assessment.assessmentUuid ?? assessment.id ?? "N/A"}`,
           `Job Title  : ${assessment.jobTitle ?? "N/A"}`,
           ``,
@@ -300,7 +300,7 @@ export function registerResumeViewTools(server: McpServer) {
   authedTool(
     server,
     "send_resume_reminder",
-    "Sends a reminder to an invited resume screener candidate who hasn't submitted their resume.",
+    "Sends a reminder to an invited AI Resume Screener candidate who hasn't submitted their resume.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       seekerId:     z.number().describe("seekerId of the candidate to remind"),

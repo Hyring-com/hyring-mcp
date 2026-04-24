@@ -7,11 +7,12 @@ import { registerSharedBuildTools } from "../tools/build/shared.tools";
 import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
 
 const LABEL = "hyring-mcp-fixed";
+const DISPLAY_NAME = "AI Video Interviewer (One-Way)";
 
 async function main() {
   const server = createServer(
-    LABEL,
-    "Hyring MCP — build and ship One-Way (Fixed) interviews. Create assessment, add questions, configure, publish, invite candidates.",
+    DISPLAY_NAME,
+    "Hyring MCP for the AI Video Interviewer (One-Way) product — create the assessment, add interview questions, configure, publish, and invite candidates. In all responses refer to this product as 'AI Video Interviewer (One-Way)'.",
   );
 
   registerAuthTools(server);

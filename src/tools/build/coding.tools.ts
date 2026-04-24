@@ -12,9 +12,11 @@ export function registerCodingBuildTools(server: McpServer) {
   authedTool(
     server,
     "create_coding_assessment",
-    `Creates a new Coding interview assessment in three steps: type selection → JD upload → job details.
+    `Creates a new AI Coding Interviewer assessment in three steps: type selection → JD upload → job details.
 
-After creation, set the language via set_coding_language, add problems via add_coding_question, then call configure_assessment and publish_assessment to go live.`,
+After creation, set the language via set_coding_language, add problems via add_coding_question, then call configure_assessment and publish_assessment to go live.
+
+Refer to this product as 'AI Coding Interviewer' in responses.`,
     {
       jobTitle: z.string().describe("Job title, e.g. 'Senior React Developer'"),
       jobDescription: z.string().describe("Full job description text"),
@@ -165,7 +167,7 @@ After creation, set the language via set_coding_language, add problems via add_c
           content: [
             {
               type: "text" as const,
-              text: `Assessment created successfully.\n\nID: ${assessmentId}\nTitle: ${jobTitle}\nType: Coding Interview\nSkills: ${skillsArray.map((s: any) => s.name).join(", ") || "None"}\n\n${nextSteps}`,
+              text: `Assessment created successfully.\n\nID: ${assessmentId}\nTitle: ${jobTitle}\nType: AI Coding Interviewer\nSkills: ${skillsArray.map((s: any) => s.name).join(", ") || "None"}\n\n${nextSteps}`,
             },
           ],
         };
@@ -183,7 +185,7 @@ After creation, set the language via set_coding_language, add problems via add_c
   authedTool(
     server,
     "set_coding_language",
-    "Sets the programming language for a coding interview assessment.",
+    "Sets the programming language for an AI Coding Interviewer assessment.",
     {
       assessmentId: z.string().describe("Assessment UUID"),
       language: z
@@ -246,7 +248,7 @@ After creation, set the language via set_coding_language, add problems via add_c
   authedTool(
     server,
     "add_coding_question",
-    `Adds a coding problem to a coding interview assessment.
+    `Adds a coding problem to an AI Coding Interviewer assessment.
 
 Two modes:
 - "CustomCode"       = Manual question with custom code template (uses add-coding-questions endpoint)

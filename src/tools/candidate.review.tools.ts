@@ -96,8 +96,8 @@ export function registerCandidateReviewTools(server: McpServer) {
     "update_hiring_stage",
     `Updates the hiring stage for a candidate after reviewing their interview result.
 
-Applies to: One-Way (fixed), Two-Way (dynamic), and Coding interviews ONLY.
-Does NOT apply to: EPT/Verbal, Phone Screener, or Resume Screener — those use AI-determined Qualified (Yes/No) status only.
+Applies to: AI Video Interviewer (One-Way), AI Video Interviewer (Two-Way), and AI Coding Interviewer ONLY.
+Does NOT apply to: English Proficiency Test, AI Phone Screener, or AI Resume Screener — those use AI-determined Qualified (Yes/No) status only.
 
 Stages:
 - "SHORTLISTED"      = Advance candidate to next round
