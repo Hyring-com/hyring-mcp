@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
-import { registerAssessmentViewTools } from "../tools/assessment.view.tools";
+import { registerAssessmentTools } from "../tools/assessment/assessment.tools";
 import { registerCodingBuildTools } from "../tools/build/coding.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
-import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
+import { registerInviteTools } from "../tools/candidates/invite.tools";
 
 const LABEL = "hyring-mcp-coding";
 const DISPLAY_NAME = "AI Coding Interviewer";
@@ -16,10 +16,10 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerAssessmentViewTools(server);
+  registerAssessmentTools(server);
   registerCodingBuildTools(server);
   registerSharedBuildTools(server);
-  registerCandidateInviteTools(server);
+  registerInviteTools(server);
 
   await startStdio(server, LABEL);
 }

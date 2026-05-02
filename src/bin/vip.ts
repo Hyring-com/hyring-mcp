@@ -2,7 +2,7 @@
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
 import { registerVipBuildTools } from "../tools/build/vip.tools";
-import { registerVipViewTools } from "../tools/vip.view.tools";
+import { registerVipTools } from "../tools/vip/vip.tools";
 
 const LABEL = "hyring-mcp-vip";
 const DISPLAY_NAME = "Virtual Interview Platform";
@@ -14,7 +14,7 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerVipViewTools(server);
+  registerVipTools(server);
   registerVipBuildTools(server);
 
   await startStdio(server, LABEL);

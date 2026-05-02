@@ -3,8 +3,8 @@ import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
 import { registerPhoneBuildTools } from "../tools/build/phone.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
-import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
-import { registerPhoneViewTools } from "../tools/phone.view.tools";
+import { registerInviteTools } from "../tools/candidates/invite.tools";
+import { registerPhoneTools } from "../tools/phone-screener/phone.tools";
 
 const LABEL = "hyring-mcp-phone";
 const DISPLAY_NAME = "AI Phone Screener";
@@ -16,10 +16,10 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerPhoneViewTools(server);
+  registerPhoneTools(server);
   registerPhoneBuildTools(server);
   registerSharedBuildTools(server);
-  registerCandidateInviteTools(server);
+  registerInviteTools(server);
 
   await startStdio(server, LABEL);
 }

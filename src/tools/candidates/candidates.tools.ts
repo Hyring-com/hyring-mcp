@@ -1,9 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { screenerClient, extractError, getEmployerIdFromAPI } from "../api/screener.client";
-import { authedTool } from "../server";
+import { screenerClient, extractError } from "../../api/screener.client";
+import { authedTool } from "../../server";
 
-export function registerCandidateReviewTools(server: McpServer) {
+export function registerCandidatesTools(server: McpServer) {
 
   // ── list_candidates ───────────────────────────────────────────────────────────
   authedTool(
@@ -41,7 +41,9 @@ export function registerCandidateReviewTools(server: McpServer) {
             retake:        `/assessment/view/retake-request/${assessmentId}`,
             scheduled:     `/assessment/view/scheduled/${assessmentId}`,
           };
-          res = await screenerClient.get(endpointMap[status], { params: { skip, take } });
+          // Backend attended endpoint uses 'page' not 'skip' for pagination
+          // Send both so it works regardless of which param the endpoint reads
+          res = await screenerClient.get(endpointMap[status], { params: { skip, page: skip, take } });
         }
         const raw = res.data?.data;
 
@@ -66,22 +68,51 @@ export function registerCandidateReviewTools(server: McpServer) {
           return { content: [{ type: "text" as const, text: `No ${status} candidates for assessment ${assessmentId}. Total on record: ${totalCount}` }] };
         }
 
+        const CAND_STATUS: Record<string, string> = {
+          ENDED_ASSESSMENT:        "Completed",
+          COMPLETED:               "Completed",
+          ENDED_ASSESSMENT_RETAKE: "Completed (Retake)",
+          CREATED:                 "Not Completed",
+          CREATED_RETAKE:          "Not Completed (Retake)",
+          DISQUALIFIED:            "Disqualified",
+        };
+        const STAGE: Record<string, string> = {
+          NOT_YET_EVALUATED: "Pending Review",
+          NOT_APPLICABLE:    "Not Applicable",
+          ON_HOLD:           "On Hold",
+          SHORTLISTED:       "Shortlisted",
+          HIRED:             "Hired",
+          REJECTED:          "Rejected",
+        };
+
         const lines = candidates.map((c: any, i: number) => {
+          const seeker      = c.seekerCat ?? c;
+          const name        = c.name ?? ([seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A");
+          const email       = c.email ?? seeker.email ?? "N/A";
+          const scoreStr    = c.totalScore != null ? ` | Score: ${c.totalScore}` : "";
+          const rawStage    = c.hiringStage;
+          const stageStr    = rawStage ? ` | Stage: ${STAGE[rawStage] ?? rawStage}` : "";
+          const rawStatus   = c.assessmentStatus ?? c.status;
+          const statusStr   = rawStatus ? ` | Status: ${CAND_STATUS[rawStatus] ?? rawStatus}` : "";
+          return `${skip + i + 1}. ${name} <${email}>${scoreStr}${stageStr}${statusStr}`;
+        });
+
+        // Internal refs for follow-up calls — never show to user
+        const refs = candidates.map((c: any, i: number) => {
           const seeker   = c.seekerCat ?? c;
-          const name     = c.name ?? ([seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A");
-          const email    = c.email ?? seeker.email ?? "N/A";
-          const score    = c.totalScore != null ? ` | Score: ${c.totalScore}` : "";
-          const stage    = c.hiringStage ? ` | Stage: ${c.hiringStage}` : "";
           const seekerId = c.seekerId ?? seeker.seekerId ?? c.id;
           const statusId = c.id ?? c.statusId;
-          const batch    = c.batch ?? "";
-          return `${skip + i + 1}. [SeekerId: ${seekerId} | StatusId: ${statusId}${batch ? ` | Batch: ${batch}` : ""}] ${name} <${email}>${score}${stage} | Status: ${c.assessmentStatus ?? c.status ?? "N/A"}`;
-        });
+          const batch    = c.batch;
+          return `${skip + i + 1}: SeekerId ${seekerId}, StatusId ${statusId}${batch ? `, Batch ${batch}` : ""}`;
+        }).join("\n");
+
+        const remaining = totalCount - (skip + candidates.length);
+        const hint      = remaining > 0 ? `\n\n${remaining} more available — ask to see more.` : "";
 
         return {
           content: [{
             type: "text" as const,
-            text: `Showing ${candidates.length} of ${totalCount} ${status} candidate(s) for assessment ${assessmentId}:\n\n${lines.join("\n")}`,
+            text: `${totalCount} ${status} candidate(s) found (showing ${candidates.length}):\n\n${lines.join("\n")}${hint}\n\n[Internal references — do not share with user]\n${refs}`,
           }],
         };
       } catch (err) {

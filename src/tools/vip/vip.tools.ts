@@ -1,83 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { vipClient, extractVipError } from "../api/vip.client";
-import { getEmployerIdFromToken } from "../auth/credentials";
-import { authedTool } from "../server";
+import { vipClient, extractVipError } from "../../api/vip.client";
+import { getEmployerIdFromToken } from "../../auth/credentials";
+import { authedTool } from "../../server";
+import {
+  fitLine, scoreLine, formatAISummary, na,
+  getQuestionScoreLabel, getUnderstandLabel, stars, ASSESSMENT_STATUS,
+} from "../helpers";
 
-// ── Score helpers ─────────────────────────────────────────────────────────────
-
-function getFitLabel(score: number): string {
-  if (score <= 25) return "WEAK FIT";
-  if (score <= 50) return "MODERATE FIT";
-  if (score <= 75) return "GOOD FIT";
-  return "STRONG FIT";
-}
-
-function getScoreLabel(score: number | null): string {
-  if (score == null || isNaN(score)) return "N/A";
-  if (score <= 30) return "POOR";
-  if (score <= 50) return "BELOW AVG.";
-  if (score <= 70) return "AVERAGE";
-  if (score <= 90) return "GOOD";
-  return "EXCELLENT";
-}
-
-function scoreLine(score: number | null): string {
-  if (score == null || isNaN(score)) return "N/A";
-  return `${Math.round(score)}% — ${getScoreLabel(score)}`;
-}
-
-function fitLine(score: number | null): string {
-  if (score == null || isNaN(score)) return "N/A";
-  const pct = Math.round(score);
-  return `${pct}% — ${getFitLabel(pct)}`;
-}
-
-/** Question score 0-4 scale → label (VIP: Poor/Average/Fair/Perfect) */
-function getQuestionScoreLabel(score: number | null | undefined): string {
-  if (score == null) return "N/A";
-  if (score <= 0) return "Not Scored";
-  if (score <= 1) return "Poor";
-  if (score <= 2) return "Average";
-  if (score <= 3) return "Fair";
-  return "Perfect";
-}
-
-/** understand_score 0-10 scale → label */
-function getUnderstandLabel(score: number | null | undefined): string {
-  if (score == null) return "N/A";
-  if (score <= 2) return "Poor";
-  if (score <= 4) return "Below Average";
-  if (score <= 6) return "Average";
-  if (score <= 8) return "Good";
-  return "Excellent";
-}
-
-/** Stars display for 0-5 rating */
-function stars(rating: number | null, max = 5): string {
-  if (rating == null) return "N/A";
-  const r = Math.round(rating);
-  return "★".repeat(r) + "☆".repeat(max - r) + ` (${rating}/${max})`;
-}
-
-function formatAISummary(summary: any): string {
-  if (!summary) return "N/A";
-  if (Array.isArray(summary)) return summary.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
-  if (typeof summary === "string") {
-    try {
-      const parsed = JSON.parse(summary);
-      if (Array.isArray(parsed)) return parsed.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
-    } catch { /* not JSON */ }
-    return summary.trim() || "N/A";
-  }
-  return JSON.stringify(summary);
-}
-
-function na(v: any): string {
-  return v != null && v !== "" ? String(v) : "N/A";
-}
-
-export function registerVipViewTools(server: McpServer) {
+export function registerVipTools(server: McpServer) {
 
   // ── list_vip_assessments ────────────────────────────────────────────────────
   authedTool(
@@ -108,17 +39,26 @@ export function registerVipViewTools(server: McpServer) {
         }
 
         const lines = assessments.map((a: any, i: number) => {
-          const id = a.assessmentUuid ?? a.id;
-          return `${(page - 1) * take + i + 1}. [ID: ${id}] ${a.jobTitle ?? "Untitled"} — Status: ${a.status ?? "N/A"} | ${a.jobLocationCity ?? ""}, ${a.jobLocationCountry ?? ""}`;
+          const num      = (page - 1) * take + i + 1;
+          const location = [a.jobLocationCity, a.jobLocationCountry].filter(Boolean).join(", ") || "N/A";
+          const statusLabel = ASSESSMENT_STATUS[a.status] ?? a.status ?? "N/A";
+          const responses  = a._count?.HyringVIPStatus ?? a._count?.HyringScreenerStatus ?? 0;
+          const respWord   = responses === 1 ? "response" : "responses";
+          return `${num}. ${a.jobTitle ?? "Untitled"}\n   Virtual Interview Platform | ${responses} ${respWord} | ${location} | Status: ${statusLabel}`;
         });
 
-        const showing = `Showing ${assessments.length} of ${totalCount} ${status} Virtual Interview Platform job role(s) (page ${page}):`;
-        const hint    = totalCount > page * take ? `\n\nUse page: ${page + 1} to see more.` : "";
+        const header    = `${totalCount} ${status} Virtual Interview Platform job role(s) found${assessments.length < totalCount ? ` (showing ${assessments.length})` : ""}:`;
+        const remaining = totalCount - page * take;
+        const hint      = remaining > 0 ? `\n\n${remaining} more available — ask to see more.` : "";
+
+        const refs = assessments.map((a: any, i: number) =>
+          `${(page - 1) * take + i + 1}: ${a.assessmentUuid ?? a.id}`
+        ).join("\n");
 
         return {
           content: [{
             type: "text" as const,
-            text: `${showing}\n\n${lines.join("\n")}${hint}`,
+            text: `${header}\n\n${lines.join("\n\n")}${hint}\n\n[Internal references — do not share with user]\n${refs}`,
           }],
         };
       } catch (err) {
@@ -150,10 +90,10 @@ export function registerVipViewTools(server: McpServer) {
         const cancelled  = raw.cancelled  ?? raw[2] ?? "N/A";
 
         const text = [
-          `=== Virtual Interview Platform Stats: ${assessmentId} ===`,
-          `Completed:  ${completed}`,
-          `Scheduled:  ${scheduled}`,
-          `Cancelled:  ${cancelled}`,
+          `Candidate Summary:`,
+          `  Completed  : ${completed}`,
+          `  Scheduled  : ${scheduled}`,
+          `  Cancelled  : ${cancelled}`,
         ].join("\n");
 
         return { content: [{ type: "text" as const, text }] };
@@ -173,16 +113,19 @@ export function registerVipViewTools(server: McpServer) {
       status: z.enum(["completed", "scheduled", "cancelled"])
         .optional()
         .describe("Interview status filter. Default: completed"),
+      page: z.number().optional().describe("Page number (1-based). Default: 1"),
+      take: z.number().optional().describe("Results per page. Default: 10"),
     },
-    async ({ assessmentId, status = "completed" }) => {
+    async ({ assessmentId, status = "completed", page = 1, take = 10 }) => {
       try {
         const employerId = getEmployerIdFromToken();
         const res = await vipClient.get(`/details/interview/${status}/${employerId}`, {
-          params: { assessmentId, skip: "0", take: "10" },
+          params: { assessmentId, skip: page - 1, take },
         });
         const raw = res.data?.data ?? res.data;
         // Backend returns tuple: [interviewsList, totalCount, assessmentData]
         const interviews: any[] = Array.isArray(raw) && Array.isArray(raw[0]) ? raw[0] : (Array.isArray(raw) ? raw : []);
+        const totalCount: number = Array.isArray(raw) && typeof raw[1] === "number" ? raw[1] : interviews.length;
 
         if (!interviews.length) {
           return { content: [{ type: "text" as const, text: `No ${status} interviews found for job role ${assessmentId}.` }] };
@@ -192,20 +135,24 @@ export function registerVipViewTools(server: McpServer) {
           const seeker   = iv.seekerCat ?? iv.seeker ?? iv;
           const name     = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || seeker.fullName || "N/A";
           const email    = seeker.email ?? iv.email ?? "N/A";
-          const statusId = iv.id ?? iv.statusId ?? "N/A";
           const stage    = iv.hiringStage ?? "N/A";
           const date     = iv.interviewDate ?? iv.scheduledAt ?? iv.createdAt ?? "N/A";
-          return `${i + 1}. [StatusId: ${statusId}] ${name} <${email}>\n   Stage: ${stage} | Date: ${date}`;
+          return `${(page - 1) * take + i + 1}. ${name} <${email}>\n   Stage: ${stage} | Date: ${date}`;
         });
 
-        const hint = status === "completed"
-          ? `\nUse StatusId with get_vip_report to view the interview report.`
-          : "";
+        // Internal refs for follow-up calls — never show to user
+        const refs = interviews.map((iv: any, i: number) => {
+          const statusId = iv.id ?? iv.statusId ?? "N/A";
+          return `${(page - 1) * take + i + 1}: StatusId ${statusId}`;
+        }).join("\n");
+
+        const remaining = totalCount - page * take;
+        const hint      = remaining > 0 ? `\n\n${remaining} more available — ask to see more.` : "";
 
         return {
           content: [{
             type: "text" as const,
-            text: `${interviews.length} ${status} interview(s) for job role ${assessmentId}:\n\n${lines.join("\n\n")}${hint}`,
+            text: `${interviews.length} of ${totalCount} ${status} interview(s) shown:\n\n${lines.join("\n\n")}${hint}\n\n[Internal references — do not share with user]\n${refs}${status === "completed" ? "\nUse StatusId with get_vip_report to view the interview report." : ""}`,
           }],
         };
       } catch (err) {
@@ -253,7 +200,6 @@ Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or
 
         // Communication from videoAnalysis.speech_proficiency (each 0-10 → * 10 = 0-100)
         const speechProf    = r?.videoAnalysis?.speech_proficiency ?? {};
-        const hasSpeechData = Object.keys(speechProf).length > 0;
 
         // Fallback: direct score fields on result (also 0-10)
         const pronRaw    = speechProf.pronunciation    ?? r?.pronounciation_score ?? null;
@@ -359,7 +305,6 @@ Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or
           `╔══════════════════════════════════════════════╗`,
           `║     VIRTUAL INTERVIEW PLATFORM REPORT        ║`,
           `╚══════════════════════════════════════════════╝`,
-          `StatusId   : ${statusId}`,
           `Job Role   : ${na(vipStatus.title ?? r?.vipAssessment?.jobTitle)}`,
           ``,
           `┌─ CANDIDATE ────────────────────────────`,
@@ -433,7 +378,7 @@ Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or
         if (hideRejectReason !== undefined) payload.hideRejectReason = hideRejectReason;
 
         await vipClient.post(`/details/change/hyring-stage/${employerId}`, payload);
-        return { content: [{ type: "text" as const, text: `Candidate (StatusId ${statusId}) stage updated to ${stage}.${reason ? `\nReason: "${reason}"` : ""}` }] };
+        return { content: [{ type: "text" as const, text: `Candidate stage updated to ${stage}.${reason ? `\nReason: "${reason}"` : ""}` }] };
       } catch (err) {
         return { content: [{ type: "text" as const, text: `Error: ${extractVipError(err)}` }] };
       }

@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { screenerClient, extractError, getEmployerIdFromAPI } from "../api/screener.client";
-import { authedTool } from "../server";
+import { screenerClient, extractError, getEmployerIdFromAPI } from "../../api/screener.client";
+import { ASSESSMENT_STATUS } from "../helpers";
+import { authedTool } from "../../server";
 
-export function registerResumeViewTools(server: McpServer) {
+export function registerResumeTools(server: McpServer) {
 
   // ── list_resume_assessments ─────────────────────────────────────────────────
   authedTool(
@@ -42,18 +43,25 @@ export function registerResumeViewTools(server: McpServer) {
         }
 
         const lines = assessments.map((a: any, i: number) => {
-          const candidates = a._count?.HyringScreenerStatus ?? "N/A";
-          const id         = a.assessmentUuid ?? a.id;
-          return `${(page - 1) * take + i + 1}. [ID: ${id}] ${a.jobTitle ?? "Untitled"} — Status: ${a.status ?? "N/A"} | Candidates: ${candidates}`;
+          const num        = (page - 1) * take + i + 1;
+          const responses  = a._count?.HyringScreenerStatus ?? 0;
+          const respWord   = responses === 1 ? "response" : "responses";
+          const statusLabel = ASSESSMENT_STATUS[a.status] ?? a.status ?? "N/A";
+          return `${num}. ${a.jobTitle ?? "Untitled"}\n   AI Resume Screener | ${responses} ${respWord} | Status: ${statusLabel}`;
         });
 
-        const showing = `Showing ${assessments.length} of ${totalCount} ${status} AI Resume Screener assessment(s) (page ${page}):`;
-        const hint    = totalCount > page * take ? `\n\nUse page: ${page + 1} to see more.` : "";
+        const header    = `${totalCount} ${status} AI Resume Screener assessment(s) found${assessments.length < totalCount ? ` (showing ${assessments.length})` : ""}:`;
+        const remaining = totalCount - page * take;
+        const hint      = remaining > 0 ? `\n\n${remaining} more available — ask to see more.` : "";
+
+        const refs = assessments.map((a: any, i: number) =>
+          `${(page - 1) * take + i + 1}: ${a.assessmentUuid ?? a.id}`
+        ).join("\n");
 
         return {
           content: [{
             type: "text" as const,
-            text: `${showing}\n\n${lines.join("\n")}${hint}`,
+            text: `${header}\n\n${lines.join("\n\n")}${hint}\n\n[Internal references — do not share with user]\n${refs}`,
           }],
         };
       } catch (err) {
@@ -84,12 +92,12 @@ export function registerResumeViewTools(server: McpServer) {
         const declined = raw.declined ?? raw[4] ?? "N/A";
 
         const text = [
-          `=== AI Resume Screener Stats: ${assessmentId} ===`,
-          `All Candidates: ${all}`,
-          `Uploaded:       ${uploaded}`,
-          `Invited:        ${invited}`,
-          `Inbound:        ${inbound}`,
-          `Declined:       ${declined}`,
+          `Candidate Summary:`,
+          `  All Candidates  : ${all}`,
+          `  Uploaded        : ${uploaded}`,
+          `  Invited         : ${invited}`,
+          `  Inbound         : ${inbound}`,
+          `  Declined        : ${declined}`,
         ].join("\n");
 
         return { content: [{ type: "text" as const, text }] };
@@ -114,7 +122,14 @@ export function registerResumeViewTools(server: McpServer) {
       try {
         const res = await screenerClient.get(`/details/employer/view/${status}/${assessmentId}`);
         const raw = res.data?.data ?? res.data;
-        const candidates: any[] = Array.isArray(raw) ? raw : [];
+        // Backend returns 5-tuple: [assessmentData, topFive, candidates, total_count, filtered_count]
+        let candidates: any[] = [];
+        if (Array.isArray(raw) && Array.isArray(raw[2])) {
+          candidates = raw[2];
+        } else if (Array.isArray(raw)) {
+          candidates = raw;
+        }
+        const totalCount: number = Array.isArray(raw) && typeof raw[3] === "number" ? raw[3] : candidates.length;
 
         if (!candidates.length) {
           return { content: [{ type: "text" as const, text: `No ${status} candidates found for assessment ${assessmentId}.` }] };
@@ -124,18 +139,22 @@ export function registerResumeViewTools(server: McpServer) {
           const seeker   = c.seekerCat ?? c;
           const name     = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "N/A";
           const email    = seeker.email ?? c.email ?? "N/A";
-          const statusId = c.id ?? c.statusId ?? "N/A";
-          const fitScore = c.fitScore ?? c.score ?? "N/A";
-          const qualified = c.isQualified != null ? (c.isQualified ? "Qualified ✓" : "Not Qualified ✗") : "N/A";
-          return `${i + 1}. [StatusId: ${statusId}] ${name} <${email}>\n   Fit Score: ${fitScore} | ${qualified}`;
+          const fitScore  = c.fitScore ?? c.score ?? "N/A";
+          const q = c.qualified ?? c.isQualified;
+          const qualified = q != null ? (q ? "Qualified ✓" : "Not Qualified ✗") : "N/A";
+          return `${i + 1}. ${name} <${email}>\n   Fit Score: ${fitScore} | ${qualified}`;
         });
 
-        const hint = `\nUse StatusId with get_resume_report to view the full AI Resume Screener report.`;
+        // Internal refs for follow-up calls — never show to user
+        const refs = candidates.map((c: any, i: number) => {
+          const statusId = c.id ?? c.statusId ?? "N/A";
+          return `${i + 1}: StatusId ${statusId}`;
+        }).join("\n");
 
         return {
           content: [{
             type: "text" as const,
-            text: `${candidates.length} ${status} candidate(s) for assessment ${assessmentId}:\n\n${lines.join("\n\n")}${hint}`,
+            text: `Showing ${candidates.length} of ${totalCount} ${status} candidate(s) for assessment ${assessmentId}:\n\n${lines.join("\n\n")}\n\n[Internal references — do not share with user]\n${refs}\nUse StatusId with get_resume_report to view the full AI Resume Screener report.`,
           }],
         };
       } catch (err) {
@@ -151,13 +170,20 @@ export function registerResumeViewTools(server: McpServer) {
     "Returns the full resume screening report for a candidate: fit score, criteria match (MUST HAVE / nice-to-have), skill depth analysis, company tier analysis, industry exposure, AI summary, and resume link.",
     {
       statusId: z.string().describe("HyringScreenerStatus ID from list_resume_candidates"),
+      tab: z.enum(["top", "uploaded", "invited", "inbound"]).optional()
+        .describe("Tab for sibling navigation: top=top 5, uploaded, invited, inbound. Default: top"),
     },
-    async ({ statusId }) => {
+    async ({ statusId, tab = "top" }) => {
       try {
         const employerId = await getEmployerIdFromAPI();
-        const res = await screenerClient.get(`/screener/rs-report/${employerId}`, {
-          params: { status: statusId },
-        });
+        const [res, totalRes] = await Promise.all([
+          screenerClient.get(`/screener/rs-report/${employerId}`, {
+            params: { status: statusId },
+          }),
+          screenerClient.get(`/screener/rs-report/total/${employerId}`, {
+            params: { status: statusId, tab },
+          }),
+        ]);
 
         const raw = res.data?.data ?? res.data;
 
@@ -260,13 +286,11 @@ export function registerResumeViewTools(server: McpServer) {
           `╔══════════════════════════════════════════════╗`,
           `║       AI RESUME SCREENER REPORT              ║`,
           `╚══════════════════════════════════════════════╝`,
-          `Assessment : ${assessment.assessmentUuid ?? assessment.id ?? "N/A"}`,
           `Job Title  : ${assessment.jobTitle ?? "N/A"}`,
           ``,
           `┌─ CANDIDATE ────────────────────────────`,
           `  Name         : ${name}`,
           `  Email        : ${email}`,
-          `  StatusId     : ${statusId}`,
           locationStr    ? `  Location     : ${locationStr}` : "",
           expYears       ? `  Experience   : ${expYears}`    : "",
           `  Status       : ${r?.status ?? "N/A"}`,
@@ -288,6 +312,14 @@ export function registerResumeViewTools(server: McpServer) {
           `┌─ AI SUMMARY ───────────────────────────`,
           aiSummaryText,
         ].filter((l: string) => l !== "");
+
+        // ── Sibling screener IDs (navigation) ────────────────────────────────
+        const totalRaw = totalRes.data?.data ?? totalRes.data;
+        const siblingIds: any[] = Array.isArray(totalRaw) ? totalRaw : [];
+        if (siblingIds.length > 1) {
+          const idList = siblingIds.map((s: any) => s?.id ?? s).filter(Boolean).join(", ");
+          lines.push(``, `[Internal references — do not share with user]`, `Sibling StatusIds in tab (${tab}): ${idList}`);
+        }
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       } catch (err) {

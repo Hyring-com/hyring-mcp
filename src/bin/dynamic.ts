@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
-import { registerAssessmentViewTools } from "../tools/assessment.view.tools";
+import { registerAssessmentTools } from "../tools/assessment/assessment.tools";
 import { registerDynamicBuildTools } from "../tools/build/dynamic.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
-import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
+import { registerInviteTools } from "../tools/candidates/invite.tools";
 
 const LABEL = "hyring-mcp-dynamic";
 const DISPLAY_NAME = "AI Video Interviewer (Two-Way)";
@@ -16,10 +16,10 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerAssessmentViewTools(server);
+  registerAssessmentTools(server);
   registerDynamicBuildTools(server);
   registerSharedBuildTools(server);
-  registerCandidateInviteTools(server);
+  registerInviteTools(server);
 
   await startStdio(server, LABEL);
 }

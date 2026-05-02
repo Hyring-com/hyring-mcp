@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
-import { registerAssessmentViewTools } from "../tools/assessment.view.tools";
+import { registerAssessmentTools } from "../tools/assessment/assessment.tools";
 import { registerVerbalBuildTools } from "../tools/build/verbal.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
-import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
+import { registerInviteTools } from "../tools/candidates/invite.tools";
 
 const LABEL = "hyring-mcp-verbal";
 const DISPLAY_NAME = "English Proficiency Test";
@@ -16,10 +16,10 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerAssessmentViewTools(server);
+  registerAssessmentTools(server);
   registerVerbalBuildTools(server);
   registerSharedBuildTools(server);
-  registerCandidateInviteTools(server);
+  registerInviteTools(server);
 
   await startStdio(server, LABEL);
 }

@@ -1,50 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { screenerClient, extractError, getEmployerIdFromAPI } from "../api/screener.client";
-import { phoneClient, extractPhoneError } from "../api/phone.client";
-import { authedTool } from "../server";
+import { screenerClient, extractError, getEmployerIdFromAPI } from "../../api/screener.client";
+import { phoneClient, extractPhoneError } from "../../api/phone.client";
+import { authedTool } from "../../server";
+import { scoreLine, formatDuration, formatAISummary, na, ASSESSMENT_STATUS } from "../helpers";
 
-// ── Score helpers ─────────────────────────────────────────────────────────────
-
-function getScoreLabel(score: number | null): string {
-  if (score == null || isNaN(score)) return "N/A";
-  if (score <= 30) return "POOR";
-  if (score <= 50) return "BELOW AVG.";
-  if (score <= 70) return "AVERAGE";
-  if (score <= 90) return "GOOD";
-  return "EXCELLENT";
-}
-
-function scoreLine(score: number | null): string {
-  if (score == null || isNaN(score)) return "N/A";
-  return `${Math.round(score)}% — ${getScoreLabel(score)}`;
-}
-
-function formatDuration(secs: number | null | undefined): string {
-  if (!secs) return "N/A";
-  const m = Math.floor(secs / 60);
-  const s = Math.round(secs % 60);
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
-}
-
-function formatAISummary(summary: any): string {
-  if (!summary) return "N/A";
-  if (Array.isArray(summary)) return summary.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
-  if (typeof summary === "string") {
-    try {
-      const parsed = JSON.parse(summary);
-      if (Array.isArray(parsed)) return parsed.map((s, i) => `  ${i + 1}. ${s}`).join("\n");
-    } catch { /* not JSON */ }
-    return summary.trim() || "N/A";
-  }
-  return JSON.stringify(summary);
-}
-
-function na(v: any): string {
-  return v != null && v !== "" ? String(v) : "N/A";
-}
-
-export function registerPhoneViewTools(server: McpServer) {
+export function registerPhoneTools(server: McpServer) {
 
   // ── list_phone_assessments ──────────────────────────────────────────────────
   authedTool(
@@ -83,18 +44,25 @@ export function registerPhoneViewTools(server: McpServer) {
         }
 
         const lines = assessments.map((a: any, i: number) => {
-          const candidates = a._count?.HyringScreenerStatus ?? "N/A";
-          const id         = a.assessmentUuid ?? a.id;
-          return `${(page - 1) * take + i + 1}. [ID: ${id}] ${a.jobTitle ?? "Untitled"} — Status: ${a.status ?? "N/A"} | Candidates: ${candidates}`;
+          const num         = (page - 1) * take + i + 1;
+          const responses   = a._count?.HyringScreenerStatus ?? 0;
+          const respWord    = responses === 1 ? "response" : "responses";
+          const statusLabel = ASSESSMENT_STATUS[a.status] ?? a.status ?? "N/A";
+          return `${num}. ${a.jobTitle ?? "Untitled"}\n   AI Phone Screener | ${responses} ${respWord} | Status: ${statusLabel}`;
         });
 
-        const showing = `Showing ${assessments.length} of ${totalCount} ${status} AI Phone Screener assessment(s) (page ${page}):`;
-        const hint    = totalCount > page * take ? `\n\nUse page: ${page + 1} to see more.` : "";
+        const header    = `${totalCount} ${status} AI Phone Screener assessment(s) found${assessments.length < totalCount ? ` (showing ${assessments.length})` : ""}:`;
+        const remaining = totalCount - page * take;
+        const hint      = remaining > 0 ? `\n\n${remaining} more available — ask to see more.` : "";
+
+        const refs = assessments.map((a: any, i: number) =>
+          `${(page - 1) * take + i + 1}: ${a.assessmentUuid ?? a.id}`
+        ).join("\n");
 
         return {
           content: [{
             type: "text" as const,
-            text: `${showing}\n\n${lines.join("\n")}${hint}`,
+            text: `${header}\n\n${lines.join("\n\n")}${hint}\n\n[Internal references — do not share with user]\n${refs}`,
           }],
         };
       } catch (err) {
@@ -124,11 +92,11 @@ export function registerPhoneViewTools(server: McpServer) {
         const declined = raw.declined  ?? (Array.isArray(raw) ? raw[3] : "N/A");
 
         const text = [
-          `=== AI Phone Screener Stats: ${assessmentId} ===`,
-          `Attended (Completed): ${attended}`,
-          `Invited:              ${invited}`,
-          `Started:              ${started}`,
-          `Declined:             ${declined}`,
+          `Candidate Summary:`,
+          `  Completed : ${attended}`,
+          `  Invited   : ${invited}`,
+          `  Started   : ${started}`,
+          `  Declined  : ${declined}`,
         ].join("\n");
 
         return { content: [{ type: "text" as const, text }] };
@@ -166,14 +134,19 @@ export function registerPhoneViewTools(server: McpServer) {
                              || "N/A";
           const email        = seeker.email ?? c.email ?? "N/A";
           const phone        = c.phoneNumber ?? c.mobile ?? seeker.mobile ?? "N/A";
-          const screenerId   = c.id ?? c.statusId ?? "N/A";
-          const candidateType = c.cadidateType ?? c.candidateType ?? (seeker.seekerId ? "ACTIVE" : "PASSIVE");
           const score        = c.totalScore  ?? "N/A";
-          return `${i + 1}. [ScreenerId: ${screenerId} | Type: ${candidateType}] ${name} <${email}> ${phone}\n   Score: ${score}`;
+          return `${i + 1}. ${name} <${email}> ${phone}\n   Score: ${score}`;
         });
 
+        // Internal refs for follow-up calls — never show to user
+        const refs = candidates.map((c: any, i: number) => {
+          const screenerId   = c.id ?? c.statusId ?? "N/A";
+          const candidateType = c.cadidateType ?? c.candidateType ?? (c.seekerCat?.seekerId ? "ACTIVE" : "PASSIVE");
+          return `${i + 1}: ScreenerId ${screenerId}, Type ${candidateType}`;
+        }).join("\n");
+
         const hint = status === "attended"
-          ? `\nUse ScreenerId + candidateType with get_phone_report to view the full call report.`
+          ? `\n\n[Internal references — do not share with user]\n${refs}`
           : "";
 
         return {
@@ -307,7 +280,6 @@ Refer to this product as 'AI Phone Screener' in responses.`,
           `╔══════════════════════════════════════════════╗`,
           `║       AI PHONE SCREENER REPORT               ║`,
           `╚══════════════════════════════════════════════╝`,
-          `Assessment : ${na(assessmentData.assessmentUuid)}`,
           `Job Title  : ${na(assessmentData.jobTitle)}`,
           ``,
           `┌─ CANDIDATE ────────────────────────────`,
@@ -317,7 +289,6 @@ Refer to this product as 'AI Phone Screener' in responses.`,
           city !== "N/A"        ? `  City        : ${city}` : "",
           designation !== "N/A" ? `  Designation : ${designation}` : "",
           `  Type        : ${type}`,
-          `  ScreenerId  : ${screenerId}`,
           ``,
           `┌─ CALL DETAILS ─────────────────────────`,
           `  Call Status     : ${callSuccess ? "✅ Successful" : "❌ Failed"}`,

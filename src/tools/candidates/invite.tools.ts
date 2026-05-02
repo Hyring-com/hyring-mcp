@@ -1,9 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { screenerClient, extractError, getEmployerIdFromAPI } from "../api/screener.client";
-import { authedTool } from "../server";
+import { screenerClient, extractError, getEmployerIdFromAPI } from "../../api/screener.client";
+import { authedTool } from "../../server";
 
-export function registerCandidateInviteTools(server: McpServer) {
+export function registerInviteTools(server: McpServer) {
 
   // ── invite_candidate ──────────────────────────────────────────────────────────
   authedTool(

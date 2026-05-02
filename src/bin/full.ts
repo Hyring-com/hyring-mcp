@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
-import { registerAssessmentViewTools } from "../tools/assessment.view.tools";
+import { registerAssessmentTools } from "../tools/assessment/assessment.tools";
 import { registerFixedBuildTools } from "../tools/build/fixed.tools";
 import { registerDynamicBuildTools } from "../tools/build/dynamic.tools";
 import { registerCodingBuildTools } from "../tools/build/coding.tools";
@@ -10,12 +10,16 @@ import { registerPhoneBuildTools } from "../tools/build/phone.tools";
 import { registerResumeBuildTools } from "../tools/build/resume.tools";
 import { registerVipBuildTools } from "../tools/build/vip.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
-import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
-import { registerCandidateReviewTools } from "../tools/candidate.review.tools";
-import { registerCandidateResultsTools } from "../tools/candidate.results.tools";
-import { registerPhoneViewTools } from "../tools/phone.view.tools";
-import { registerResumeViewTools } from "../tools/resume.view.tools";
-import { registerVipViewTools } from "../tools/vip.view.tools";
+import { registerInviteTools } from "../tools/candidates/invite.tools";
+import { registerCandidatesTools } from "../tools/candidates/candidates.tools";
+import { registerAttendedCandidatesTools } from "../tools/candidates/attended.tools";
+import { registerOneWayReportTools } from "../tools/reports/one-way.report.tools";
+import { registerTwoWayReportTools } from "../tools/reports/two-way.report.tools";
+import { registerCodingReportTools } from "../tools/reports/coding.report.tools";
+import { registerEptReportTools } from "../tools/reports/ept.report.tools";
+import { registerPhoneTools } from "../tools/phone-screener/phone.tools";
+import { registerResumeTools } from "../tools/resume-screener/resume.tools";
+import { registerVipTools } from "../tools/vip/vip.tools";
 
 const LABEL = "hyring-mcp";
 const DISPLAY_NAME = "Hyring";
@@ -27,7 +31,7 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerAssessmentViewTools(server);
+  registerAssessmentTools(server);
 
   registerFixedBuildTools(server);
   registerDynamicBuildTools(server);
@@ -38,12 +42,16 @@ async function main() {
   registerVipBuildTools(server);
   registerSharedBuildTools(server);
 
-  registerCandidateInviteTools(server);
-  registerCandidateReviewTools(server);
-  registerCandidateResultsTools(server);
-  registerPhoneViewTools(server);
-  registerResumeViewTools(server);
-  registerVipViewTools(server);
+  registerInviteTools(server);
+  registerCandidatesTools(server);
+  registerAttendedCandidatesTools(server);
+  registerOneWayReportTools(server);
+  registerTwoWayReportTools(server);
+  registerCodingReportTools(server);
+  registerEptReportTools(server);
+  registerPhoneTools(server);
+  registerResumeTools(server);
+  registerVipTools(server);
 
   await startStdio(server, LABEL);
 }

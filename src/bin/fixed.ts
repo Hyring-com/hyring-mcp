@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
-import { registerAssessmentViewTools } from "../tools/assessment.view.tools";
+import { registerAssessmentTools } from "../tools/assessment/assessment.tools";
 import { registerFixedBuildTools } from "../tools/build/fixed.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
-import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
+import { registerInviteTools } from "../tools/candidates/invite.tools";
 
 const LABEL = "hyring-mcp-fixed";
 const DISPLAY_NAME = "AI Video Interviewer (One-Way)";
@@ -16,10 +16,10 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerAssessmentViewTools(server);
+  registerAssessmentTools(server);
   registerFixedBuildTools(server);
   registerSharedBuildTools(server);
-  registerCandidateInviteTools(server);
+  registerInviteTools(server);
 
   await startStdio(server, LABEL);
 }

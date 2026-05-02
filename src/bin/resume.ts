@@ -3,8 +3,8 @@ import { createServer, startStdio } from "../server";
 import { registerAuthTools } from "../tools/auth.tools";
 import { registerResumeBuildTools } from "../tools/build/resume.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
-import { registerCandidateInviteTools } from "../tools/candidate.invite.tools";
-import { registerResumeViewTools } from "../tools/resume.view.tools";
+import { registerInviteTools } from "../tools/candidates/invite.tools";
+import { registerResumeTools } from "../tools/resume-screener/resume.tools";
 
 const LABEL = "hyring-mcp-resume";
 const DISPLAY_NAME = "AI Resume Screener";
@@ -16,10 +16,10 @@ async function main() {
   );
 
   registerAuthTools(server);
-  registerResumeViewTools(server);
+  registerResumeTools(server);
   registerResumeBuildTools(server);
   registerSharedBuildTools(server);
-  registerCandidateInviteTools(server);
+  registerInviteTools(server);
 
   await startStdio(server, LABEL);
 }
