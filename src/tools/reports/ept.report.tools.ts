@@ -50,14 +50,15 @@ Refer to this product as 'English Proficiency Test' in responses (not 'verbal' o
           score >= 21 ? "A2 (Elementary)" :
                         "A1 (Beginner)";
 
-        // Language dimension scores — already 0-100, used directly (frontend: Math.round(fluency_score || 0))
+        // Language dimension scores — already 0-100, used directly (frontend: Math.round(score || 0))
+        // Filler and MTI are inverted: frontend displays 100 - raw_score (lower raw = fewer fillers/MTI = higher display score)
         const rnd = (v: any) => v != null ? Math.round(parseFloat(String(v))) : null;
         const fluencyPct  = rnd(agg.fluency_score);
         const gramPct     = rnd(agg.grammar_score);
         const pronPct     = rnd(agg.pronunciation_score);
         const vocabPct    = rnd(agg.vocabulary_score);
-        const fillerPct   = rnd(agg.filler_word_score);
-        const mtPct       = rnd(agg.mother_tongue_score);
+        const fillerPct   = rnd(agg.filler_word_score)   != null ? 100 - rnd(agg.filler_word_score)!   : null;
+        const mtPct       = rnd(agg.mother_tongue_score) != null ? 100 - rnd(agg.mother_tongue_score)! : null;
 
         // Additional aggregate details (from fluency-card.jsx, vocabulary-card.jsx)
         const wpm              = rnd(agg.words_per_minute_avg);
@@ -86,11 +87,19 @@ Refer to this product as 'English Proficiency Test' in responses (not 'verbal' o
         // ── Full Transcript (Q&A per topic) ────────────────────────────────────
         // results[] has: question, answer/transcript, skill, candidate_start_sec, candidate_end_sec + detections
         const seekerName = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ") || "Candidate";
+        const secToMmSs = (sec: any) => {
+          if (sec == null || isNaN(parseFloat(sec))) return "?";
+          const total = Math.round(parseFloat(sec));
+          const m = Math.floor(total / 60).toString().padStart(2, "0");
+          const s = (total % 60).toString().padStart(2, "0");
+          return `${m}:${s}`;
+        };
+
         const topicLines = results.map((r: any, i: number) => {
           const question   = r.question ?? "";
           const answer     = r.answer ?? r.transcript ?? r.candidate_text ?? "";
           const skill      = r.skill ?? "";
-          const timeRange  = `${r.candidate_start_sec ?? "?"}s – ${r.candidate_end_sec ?? "?"}s`;
+          const timeRange  = `${secToMmSs(r.candidate_start_sec)} – ${secToMmSs(r.candidate_end_sec)}`;
           // Detections
           const influenced = (r.influenced_words?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");
           const unclear    = (r.unclear_words_count?.detections ?? []).map((w: any) => w.detected ?? w.word).join(", ");

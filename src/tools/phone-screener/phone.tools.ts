@@ -45,7 +45,7 @@ export function registerPhoneTools(server: McpServer) {
 
         const lines = assessments.map((a: any, i: number) => {
           const num         = (page - 1) * take + i + 1;
-          const responses   = a._count?.HyringScreenerStatus ?? 0;
+          const responses   = a._count?.HyringPhoneScreenerStatus ?? 0;
           const respWord    = responses === 1 ? "response" : "responses";
           const statusLabel = ASSESSMENT_STATUS[a.status] ?? a.status ?? "N/A";
           return `${num}. ${a.jobTitle ?? "Untitled"}\n   AI Phone Screener | ${responses} ${respWord} | Status: ${statusLabel}`;
@@ -80,16 +80,20 @@ export function registerPhoneTools(server: McpServer) {
     async ({ assessmentId }) => {
       try {
         const res = await phoneClient.get(`/report/view/stats/${assessmentId}`);
-        const raw = res.data?.data ?? res.data;
+        // Global ResponseInterceptor wraps in { status, message, data: <service return> }
+        // Stats service itself returns { status, message, data: { attended, invited, started, declined } }
+        // So: res.data.data.data = { attended, invited, ... }
+        const envelope = res.data?.data ?? res.data;
+        const raw = envelope?.data ?? envelope;
 
         if (!raw) {
           return { content: [{ type: "text" as const, text: "No stats found for this assessment." }] };
         }
 
-        const attended = raw.attended  ?? (Array.isArray(raw) ? raw[0] : "N/A");
-        const invited  = raw.invited   ?? (Array.isArray(raw) ? raw[1] : "N/A");
-        const started  = raw.started   ?? (Array.isArray(raw) ? raw[2] : "N/A");
-        const declined = raw.declined  ?? (Array.isArray(raw) ? raw[3] : "N/A");
+        const attended = raw.attended  ?? "N/A";
+        const invited  = raw.invited   ?? "N/A";
+        const started  = raw.started   ?? "N/A";
+        const declined = raw.declined  ?? "N/A";
 
         const text = [
           `Candidate Summary:`,
@@ -100,7 +104,7 @@ export function registerPhoneTools(server: McpServer) {
         ].join("\n");
 
         return { content: [{ type: "text" as const, text }] };
-      } catch (err) {
+      } catch (err: any) {
         return { content: [{ type: "text" as const, text: `Error: ${extractPhoneError(err)}` }] };
       }
     }
@@ -119,43 +123,67 @@ export function registerPhoneTools(server: McpServer) {
     },
     async ({ assessmentId, status = "attended" }) => {
       try {
-        const res = await phoneClient.get(`/report/view/${status}/${assessmentId}`);
-        const raw = res.data?.data ?? res.data;
-        const candidates: any[] = Array.isArray(raw) ? raw : [];
+        const res = await phoneClient.get(`/report/view/${status}/${assessmentId}`, {
+          params: { page: 0, take: 50, search: "", from: 0, to: 100, date: "", sortBy: "", qualification: "" },
+        });
+        // Global ResponseInterceptor wraps in { status, message, data: <service return> }
+        // Attended service itself returns { status, message, data: { responses, total_count } }
+        // So: res.data.data.data = { responses: [...], total_count: N }
+        const envelope = res.data?.data ?? res.data;
+        const raw = envelope?.data ?? envelope;
+
+        const candidates: any[] = raw?.responses ?? (Array.isArray(raw) ? raw : []);
+        const totalCount: number = raw?.total_count ?? candidates.length;
 
         if (!candidates.length) {
           return { content: [{ type: "text" as const, text: `No ${status} candidates found for assessment ${assessmentId}.` }] };
         }
 
         const lines = candidates.map((c: any, i: number) => {
-          const seeker       = c.seekerCat ?? c;
-          const name         = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ")
-                             || c.candidateName
-                             || "N/A";
-          const email        = seeker.email ?? c.email ?? "N/A";
-          const phone        = c.phoneNumber ?? c.mobile ?? seeker.mobile ?? "N/A";
-          const score        = c.totalScore  ?? "N/A";
-          return `${i + 1}. ${name} <${email}> ${phone}\n   Score: ${score}`;
+          // Active: seekerCat; Passive: invite or HyringPhoneScreenerDemoUsers
+          const seeker   = c.seekerCat ?? {};
+          const invite   = c.invite ?? {};
+          const demoUser = c.HyringPhoneScreenerDemoUsers?.[0] ?? {};
+          const name   = [seeker.firstName, seeker.lastName].filter(Boolean).join(" ")
+                       || invite.candidateName
+                       || demoUser.candidateName
+                       || c.candidateName
+                       || "N/A";
+          const email  = seeker.email ?? invite.email ?? c.email ?? "N/A";
+          const phone  = seeker.mobile ?? invite.phoneNumber ?? demoUser.phoneNumber ?? c.phoneNumber ?? c.mobile ?? "N/A";
+          const score  = c.totalScore != null ? `${c.totalScore}%` : "N/A";
+          const candType = (c.cadidateType ?? c.candidateType ?? (seeker.seekerId ? "ACTIVE" : "PASSIVE")).toUpperCase();
+
+          if (status === "attended") {
+            return `${i + 1}. ${name} <${email}>\n   Phone: ${phone} | Score: ${score} | Type: ${candType}`;
+          } else if (status === "declined") {
+            const reason = c.declineReason ?? "N/A";
+            return `${i + 1}. ${name}\n   Phone: ${phone} | Reason: ${reason}`;
+          } else {
+            // invited / started
+            const schedDate = c.scheduledDate ?? c.createdAt ?? "N/A";
+            return `${i + 1}. ${name}\n   Phone: ${phone} | Status: ${c.status ?? status} | Date: ${schedDate}`;
+          }
         });
 
-        // Internal refs for follow-up calls — never show to user
+        // Internal refs only needed for attended (to call get_phone_report)
         const refs = candidates.map((c: any, i: number) => {
           const screenerId   = c.id ?? c.statusId ?? "N/A";
-          const candidateType = c.cadidateType ?? c.candidateType ?? (c.seekerCat?.seekerId ? "ACTIVE" : "PASSIVE");
+          const candidateType = (c.cadidateType ?? c.candidateType ?? (c.seekerCat?.seekerId ? "ACTIVE" : "PASSIVE")).toLowerCase();
           return `${i + 1}: ScreenerId ${screenerId}, Type ${candidateType}`;
         }).join("\n");
 
-        const hint = status === "attended"
+        const refsBlock = status === "attended"
           ? `\n\n[Internal references — do not share with user]\n${refs}`
           : "";
 
         return {
           content: [{
             type: "text" as const,
-            text: `${candidates.length} ${status} candidate(s) for assessment ${assessmentId}:\n\n${lines.join("\n\n")}${hint}`,
+            text: `${candidates.length} of ${totalCount} ${status} candidate(s):\n\n${lines.join("\n\n")}${refsBlock}`,
           }],
         };
-      } catch (err) {
+      } catch (err: any) {
         return { content: [{ type: "text" as const, text: `Error: ${extractPhoneError(err)}` }] };
       }
     }
@@ -167,7 +195,16 @@ export function registerPhoneTools(server: McpServer) {
     "get_phone_report",
     `Returns the full AI Phone Screener call report for a candidate.
 
-Shows: call success/duration, overall score with label, Interview Worthy status (all MUST_HAVE questions matched), per-question transcript with match status and priority, AI summary, audio recording link.
+IMPORTANT: Always show ALL of the following in your response — never omit any section:
+- Candidate name, phone (with country code), email, city, designation
+- Call status, duration, date
+- Audio recording URL (ALWAYS show the full URL even if not asked — never omit it)
+- Overall score with label
+- Interview Worthy status
+- AI Summary bullet points
+- All screening questions with priority, result, and candidate answer
+- Full conversation transcript if available
+- Questions asked by candidate if available
 
 screenerId is the ScreenerId from list_phone_candidates.
 candidateType is shown in list_phone_candidates — use "active" for candidates with a seeker account, "passive" for phone-only (no account) candidates. Defaults to "active".
@@ -199,19 +236,25 @@ Refer to this product as 'AI Phone Screener' in responses.`,
 
         // ── Parse response fields ────────────────────────────────────────────
         const assessmentData  = raw.assessment_data ?? {};
+        // active: result = phoneScreenerResponses; passive: result = passiveCandidates
         const callData        = Array.isArray(raw.result) ? raw.result[0] : (raw.result ?? {});
-        const seekerData      = raw.seeker_data ?? {};
+        const seekerData      = raw.seeker_data ?? {};           // active: seekerCat; passive: invite
+        const demoUser        = raw.demoUser ?? {};              // passive fallback if invite is null
         const totalScore      = raw.total_score ?? null;
         const type            = raw.cadidateType ?? candidateType.toUpperCase();
 
         // ── Candidate info ────────────────────────────────────────────────────
         const name = [seekerData.firstName, seekerData.lastName].filter(Boolean).join(" ")
                    || seekerData.candidateName
+                   || demoUser.candidateName
                    || "N/A";
-        const email    = seekerData.email    ?? "N/A";
-        const phone    = seekerData.phoneNumber ?? seekerData.mobile ?? "N/A";
+        const email       = seekerData.email    ?? "N/A";
         const designation = seekerData.currentDesignation ?? "N/A";
-        const city     = seekerData.currentCity ?? "N/A";
+        const city        = seekerData.currentCity ?? "N/A";
+        // Phone with country code: +{phoneCode} {number}
+        const phoneCode = seekerData.countryCode?.phoneCode ?? demoUser.countryCode?.phoneCode ?? null;
+        const phoneRaw  = seekerData.phoneNumber ?? seekerData.mobile ?? demoUser.phoneNumber ?? null;
+        const phone     = phoneRaw ? (phoneCode ? `+${phoneCode} ${phoneRaw}` : phoneRaw) : "N/A";
 
         // ── Call info ─────────────────────────────────────────────────────────
         const callSuccess   = callData.callSuccessful === "success";
@@ -246,8 +289,21 @@ Refer to this product as 'AI Phone Screener' in responses.`,
         const niceToHave      = transcript.filter((q: any) => q.priority === "NICE_TO_HAVE");
         const niceMatched     = niceToHave.filter((q: any) => q.matched).length;
 
-        // ── AI Summary (transcriptSummary is JSON string or array) ─────────────
-        const aiSummary = formatAISummary(callData.transcriptSummary);
+        // ── AI Summary & candidate questions ─────────────────────────────────
+        const aiSummary       = formatAISummary(callData.transcriptSummary);
+        const detailsRequest: any[] = Array.isArray(callData.detailsRequest) ? callData.detailsRequest : [];
+
+        // ── Full conversation transcript (role: "agent" | "candidate") ────────
+        const fullTranscript: any[] = callData.fullTranscript ?? [];
+        const secToMmSs = (sec: any) => {
+          if (sec == null || isNaN(parseFloat(sec))) return "??:??";
+          const total = Math.round(parseFloat(sec));
+          return `${Math.floor(total / 60).toString().padStart(2, "0")}:${(total % 60).toString().padStart(2, "0")}`;
+        };
+        const convLines = fullTranscript.map((e: any) => {
+          const speaker = e.role === "agent" ? "AI Phone Screener" : (name !== "N/A" ? name : "Candidate");
+          return `  [${secToMmSs(e.time_in_call_secs)}] ${speaker}: ${e.message ?? ""}`;
+        });
 
         // ── Per-question lines ────────────────────────────────────────────────
         const qLines = transcript.map((q: any, i: number) => {
@@ -294,8 +350,10 @@ Refer to this product as 'AI Phone Screener' in responses.`,
           `  Call Status     : ${callSuccess ? "✅ Successful" : "❌ Failed"}`,
           `  Call Duration   : ${formatDuration(callDuration)}`,
           `  Termination     : ${terminationReason}`,
-          callDate !== "N/A" ? `  Call Date    : ${callDate}` : "",
-          audioUrl ? `  Audio Recording: ${audioUrl}` : "  Audio Recording: N/A",
+          callDate !== "N/A" ? `  Call Date       : ${callDate}` : "",
+          ``,
+          `┌─ AUDIO RECORDING ──────────────────────`,
+          audioUrl ? `  ${audioUrl}` : "  N/A",
           ``,
           `┌─ SCORE ────────────────────────────────`,
           `  Overall Score   : ${scoreLine(totalScore)}`,
@@ -311,8 +369,15 @@ Refer to this product as 'AI Phone Screener' in responses.`,
           `┌─ AI SUMMARY ───────────────────────────`,
           aiSummary,
           ``,
+          detailsRequest.length > 0 ? `┌─ QUESTIONS ASKED BY CANDIDATE ─────────` : "",
+          ...detailsRequest.map((q: any, i: number) =>
+            `  ${i + 1}. ${typeof q === "string" ? q : q.question ?? JSON.stringify(q)}`
+          ),
+          detailsRequest.length > 0 ? `` : "",
           `┌─ SCREENING QUESTIONS (${totalQ}) ──────────────`,
           ...qLines.map((q: string) => q + "\n"),
+          convLines.length > 0 ? `┌─ FULL CONVERSATION (${fullTranscript.length} messages) ──────` : "",
+          ...convLines,
         ].filter((l: string) => l !== "");
 
         return { content: [{ type: "text" as const, text: lines.join("\n") }] };

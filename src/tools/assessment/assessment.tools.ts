@@ -114,18 +114,61 @@ Internal references at the bottom contain assessment UUIDs — use them for foll
           ? a.skills.map((s: any) => (typeof s === "string" ? s : s.name)).join(", ")
           : "N/A";
 
-        const questionCount = Array.isArray(a.hyringScreenerQuestions) ? a.hyringScreenerQuestions.length : 0;
+        const interviewType: string = a.interviewType ?? "";
 
-        const contexts: any[] = a.HyringScreenerContext ?? [];
-        const contextLines = contexts.length
-          ? contexts.map((c: any) => `  - ${c.skill} (${c.level})${c.concept?.length ? ": " + c.concept.join(", ") : ""}`).join("\n")
-          : "  None";
+        // ── Per-type questions/context section ──────────────────────────────
+        let questionsSection = "";
+
+        if (interviewType === "fixed") {
+          // One-Way: pre-set questions with type, difficulty, time
+          const qs: any[] = a.hyringScreenerQuestions ?? [];
+          const qLines = qs.map((q: any, i: number) => {
+            const parts = [
+              q.question ?? "N/A",
+              q.questionType ? `Type: ${q.questionType}` : "",
+              q.difficultyLevel ? `Difficulty: ${q.difficultyLevel}` : "",
+              q.timeToAnswer != null ? `Time: ${q.timeToAnswer}s` : "",
+            ].filter(Boolean).join(" | ");
+            return `  ${i + 1}. ${parts}`;
+          });
+          questionsSection = `Questions (${qs.length}):\n${qs.length ? qLines.join("\n") : "  None"}`;
+
+        } else if (interviewType === "dynamic") {
+          // Two-Way: AI-driven context topics (skill + level + concepts) — no pre-set questions
+          const ctxs: any[] = a.HyringScreenerContext ?? [];
+          const ctxLines = ctxs.map((c: any, i: number) => {
+            const concepts = c.concept?.length ? ` — Concepts: ${c.concept.join(", ")}` : "";
+            return `  ${i + 1}. ${c.skill ?? "N/A"} (${c.level ?? "N/A"})${concepts}`;
+          });
+          questionsSection = `Interview Context (${ctxs.length} topic${ctxs.length !== 1 ? "s" : ""}):\n${ctxs.length ? ctxLines.join("\n") : "  None"}`;
+
+        } else if (interviewType === "coding") {
+          // Coding: coding questions with duration, type
+          const qs: any[] = a.HyringScreenerCodingQuestions ?? [];
+          const qLines = qs.map((q: any, i: number) => {
+            const parts = [
+              q.question ?? q.concept ?? "N/A",
+              q.duration != null ? `Duration: ${q.duration} min` : "",
+              q.questionType ? `Type: ${q.questionType}` : "",
+              q.codingType === "CustomCode" ? "Custom Question" : q.codingType ? "AI Generated" : "",
+            ].filter(Boolean).join(" | ");
+            return `  ${i + 1}. ${parts}`;
+          });
+          questionsSection = `Coding Questions (${qs.length}):\n${qs.length ? qLines.join("\n") : "  None"}`;
+
+        } else if (interviewType === "verbal") {
+          // EPT: verbal context — plain text items from hyringScreenerVerbalContext[0].context
+          const verbalCtx: any[] = a.hyringScreenerVerbalContext?.[0]?.context ?? [];
+          const ctxLines = verbalCtx.map((item: any, i: number) =>
+            `  ${i + 1}. ${typeof item === "string" ? item : item.text ?? JSON.stringify(item)}`
+          );
+          questionsSection = `Context (${verbalCtx.length}):\n${verbalCtx.length ? ctxLines.join("\n") : "  None"}`;
+        }
 
         const text = [
           `Title: ${a.jobTitle ?? "N/A"}`,
-          `Product: ${a.interviewType ? (PRODUCT_NAME[a.interviewType] ?? a.interviewType) : "N/A"}`,
+          `Product: ${PRODUCT_NAME[interviewType] ?? interviewType ?? "N/A"}`,
           `Status: ${ASSESSMENT_STATUS[a.status] ?? a.status ?? "N/A"}`,
-          `Questions: ${questionCount}`,
           `Seniority: ${a.seniorityLevel ?? "N/A"}`,
           `Employment Type: ${a.employmentType ?? "N/A"}`,
           `Workplace: ${a.workPlaceType ?? "N/A"}`,
@@ -135,9 +178,9 @@ Internal references at the bottom contain assessment UUIDs — use them for foll
           `Language: ${a.language ?? "N/A"}`,
           `Expiry: ${a.expiryDate ? fmtDate(a.expiryDate) : "No expiry"}`,
           `Created: ${fmtDate(a.createdAt)}`,
-          `Interview Context:\n${contextLines}`,
+          questionsSection,
           `Description:\n${a.jobDescription ?? "N/A"}`,
-        ].join("\n");
+        ].filter(Boolean).join("\n");
 
         return { content: [{ type: "text" as const, text }] };
       } catch (err) {

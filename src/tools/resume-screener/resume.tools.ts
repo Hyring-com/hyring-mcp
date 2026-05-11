@@ -44,7 +44,7 @@ export function registerResumeTools(server: McpServer) {
 
         const lines = assessments.map((a: any, i: number) => {
           const num        = (page - 1) * take + i + 1;
-          const responses  = a._count?.HyringScreenerStatus ?? 0;
+          const responses  = a._count?.HyringResumeScreenerStatus ?? 0;
           const respWord   = responses === 1 ? "response" : "responses";
           const statusLabel = ASSESSMENT_STATUS[a.status] ?? a.status ?? "N/A";
           return `${num}. ${a.jobTitle ?? "Untitled"}\n   AI Resume Screener | ${responses} ${respWord} | Status: ${statusLabel}`;

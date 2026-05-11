@@ -60,11 +60,13 @@ The Batch number is the candidate's latest attempt. Always pass it to the report
           const score     = c.totalScore ?? "N/A";
           const attempts  = batch > 1 ? ` | Attempts: ${batch}` : "";
 
-          const statusInfo = interviewType === "verbal"
-            ? `Qualified: ${c.isQualified != null ? (c.isQualified ? "Yes ✓" : "No ✗") : "N/A"}`
-            : `Hiring Stage: ${mapStage(c.hiringStage)}`;
+          const stage = c.hiringStage ? ` | Hiring Stage: ${mapStage(c.hiringStage)}` : "";
+          const qualified = interviewType === "verbal" && c.isQualified != null
+            ? ` | Qualified: ${c.isQualified ? "Yes ✓" : "No ✗"}`
+            : "";
+          const scoreStr = score !== "N/A" ? ` | Score: ${score}` : "";
 
-          return `${i + 1}. ${name} <${email}>\n   Score: ${score} | ${statusInfo}${attempts}`;
+          return `${i + 1}. ${name} <${email}>${scoreStr}${stage}${qualified}${attempts}`;
         });
 
         // Internal refs for follow-up report calls — never show to user
@@ -74,8 +76,8 @@ The Batch number is the candidate's latest attempt. Always pass it to the report
           const statusId = c.id ?? c.statusId;
           const batch    = c.batch ?? 1;
           return interviewType === "verbal"
-            ? `${i + 1}: StatusId ${statusId}, Batch ${batch}`
-            : `${i + 1}: SeekerId ${seekerId}, Batch ${batch}`;
+            ? `${i + 1}: StatusId ${statusId}, Batch ${batch}, AssessmentId ${assessmentId}`
+            : `${i + 1}: SeekerId ${seekerId}, StatusId ${statusId}, Batch ${batch}, AssessmentId ${assessmentId}`;
         }).join("\n");
 
         return {

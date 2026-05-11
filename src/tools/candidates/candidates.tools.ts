@@ -138,20 +138,21 @@ Stages:
 - "NOT_APPLICABLE"   = Mark as not applicable
 - "NOT_YET_EVALUATED"= Reset to pending evaluation`,
     {
-      resultId:         z.number().describe("StatusId from list_candidates"),
+      assessmentId:     z.string().describe("Assessment UUID — required by backend to look up notification settings"),
+      resultId:         z.number().describe("StatusId from list_attended_candidates internal references (labeled 'StatusId'). NOT the SeekerId."),
       stage:            z.enum(["SHORTLISTED", "HIRED", "REJECTED", "ON_HOLD", "NOT_APPLICABLE", "NOT_YET_EVALUATED"]).describe("Hiring stage to set"),
       rejectReason:     z.string().optional().describe("Reason for rejection — recommended when stage is REJECTED"),
       hideRejectReason: z.boolean().optional().describe("Hide rejection reason from the candidate. Default: false"),
     },
-    async ({ resultId, stage, rejectReason, hideRejectReason }) => {
+    async ({ assessmentId, resultId, stage, rejectReason, hideRejectReason }) => {
       try {
-        const payload: any = { id: resultId, status: stage };
+        const payload: any = { id: resultId, status: stage, assessmentId };
         if (rejectReason)                  payload.rejectReason     = rejectReason;
         if (hideRejectReason !== undefined) payload.hideRejectReason = hideRejectReason;
 
         await screenerClient.patch("/assessment/result-change", payload);
 
-        return { content: [{ type: "text" as const, text: `Candidate (result ${resultId}) stage updated to ${stage}.${rejectReason ? `\nReason: "${rejectReason}"` : ""}` }] };
+        return { content: [{ type: "text" as const, text: `Candidate hiring stage updated to ${stage}.` }] };
       } catch (err) {
         return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
       }

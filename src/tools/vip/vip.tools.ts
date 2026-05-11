@@ -194,9 +194,9 @@ Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or
           ?? [seeker.firstName, seeker.lastName].filter(Boolean).join(" "))
           || "N/A";
 
-        // ── AI Scores ────────────────────────────────────────────────────────
-        // totalScore: AI-computed technical score (0-100)
-        const aiTechScore   = r?.totalScore != null ? parseFloat(String(r.totalScore)) : null;
+        // ── AI Score ─────────────────────────────────────────────────────────
+        // totalScore: AI-computed score (0-100), shown as "AI Score" in portal
+        const aiScore = r?.totalScore != null ? Math.round(parseFloat(String(r.totalScore))) : null;
 
         // Communication from videoAnalysis.speech_proficiency (each 0-10 → * 10 = 0-100)
         const speechProf    = r?.videoAnalysis?.speech_proficiency ?? {};
@@ -219,11 +219,6 @@ Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or
         const commAvgPct = commScores.length
           ? Math.round(commScores.reduce((a, b) => a + b, 0) / commScores.length)
           : null;
-
-        // ── Fit Score (50% tech + 50% comm, default weights) ────────────────
-        const fitPct = aiTechScore != null && commAvgPct != null
-          ? Math.round(aiTechScore * 0.5 + commAvgPct * 0.5)
-          : aiTechScore ?? null;
 
         // ── Accent ───────────────────────────────────────────────────────────
         const accent = r?.videoAnalysis?.accent_analysis;
@@ -315,8 +310,7 @@ Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or
           `  Date         : ${na(vipStatus.startDate)}`,
           ``,
           `┌─ AI ANALYSIS ──────────────────────────`,
-          `  Fit Score         : ${fitLine(fitPct)}`,
-          `  Technical Score   : ${aiTechScore != null ? scoreLine(aiTechScore) : "N/A"}`,
+          `  AI Score          : ${aiScore != null ? scoreLine(aiScore) : "N/A"}`,
           `  Communication     : ${commAvgPct != null ? scoreLine(commAvgPct) : "N/A"}`,
           `  Accent            : ${accentText}`,
           ``,
@@ -340,8 +334,8 @@ Refer to this product as 'Virtual Interview Platform' in responses (not 'VIP' or
           `┌─ INTERVIEWER EVALUATION ───────────────`,
           evaluation
             ? [
-                evalTech  != null ? `  Technical Score   : ${evalTech}/10` : "",
-                evalComm  != null ? `  Communication     : ${evalComm}/10` : "",
+                evalTech  != null ? `  Technical Score   : ${evalTech}/5` : "",
+                evalComm  != null ? `  Communication     : ${evalComm}/5` : "",
                 decision           ? `  Hiring Decision   : ${decision}`  : "",
                 rejectReason       ? `  Rejection Reason  : ${rejectReason}` : "",
                 comments           ? `  Comments          : "${comments}"` : "",
