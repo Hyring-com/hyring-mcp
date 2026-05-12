@@ -1,4 +1,18 @@
 node_modules/
 dist/
 .env
+.env.*
 *.log
+
+# Build artifacts
+*.dxt
+*.tgz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp

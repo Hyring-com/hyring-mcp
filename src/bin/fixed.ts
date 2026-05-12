@@ -5,6 +5,9 @@ import { registerAssessmentTools } from "../tools/assessment/assessment.tools";
 import { registerFixedBuildTools } from "../tools/build/fixed.tools";
 import { registerSharedBuildTools } from "../tools/build/shared.tools";
 import { registerInviteTools } from "../tools/candidates/invite.tools";
+import { registerCandidatesTools } from "../tools/candidates/candidates.tools";
+import { registerAttendedCandidatesTools } from "../tools/candidates/attended.tools";
+import { registerOneWayReportTools } from "../tools/reports/one-way.report.tools";
 
 const LABEL = "hyring-mcp-fixed";
 const DISPLAY_NAME = "AI Video Interviewer (One-Way)";
@@ -12,7 +15,7 @@ const DISPLAY_NAME = "AI Video Interviewer (One-Way)";
 async function main() {
   const server = createServer(
     DISPLAY_NAME,
-    "Hyring MCP for the AI Video Interviewer (One-Way) product — create the assessment, add interview questions, configure, publish, and invite candidates. In all responses refer to this product as 'AI Video Interviewer (One-Way)'.",
+    "Hyring MCP for the AI Video Interviewer (One-Way) product — create the assessment, add interview questions, configure, publish, invite candidates, list and update candidates, and review reports. In all responses refer to this product as 'AI Video Interviewer (One-Way)'.",
   );
 
   registerAuthTools(server);
@@ -20,6 +23,9 @@ async function main() {
   registerFixedBuildTools(server);
   registerSharedBuildTools(server);
   registerInviteTools(server);
+  registerCandidatesTools(server);
+  registerAttendedCandidatesTools(server);
+  registerOneWayReportTools(server);
 
   await startStdio(server, LABEL);
 }

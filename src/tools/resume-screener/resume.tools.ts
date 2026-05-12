@@ -344,7 +344,7 @@ export function registerResumeTools(server: McpServer) {
           assessmentId,
           seekerId,
         });
-        return { content: [{ type: "text" as const, text: `Reminder sent to candidate (seekerId: ${seekerId}).` }] };
+        return { content: [{ type: "text" as const, text: `Reminder sent to the candidate.` }] };
       } catch (err) {
         return { content: [{ type: "text" as const, text: `Error: ${extractError(err)}` }] };
       }

@@ -13,7 +13,13 @@ export interface Credentials {
 
 export function saveCredentials(email: string, token: string): void {
   if (!fs.existsSync(CREDENTIALS_DIR)) {
-    fs.mkdirSync(CREDENTIALS_DIR, { recursive: true });
+    fs.mkdirSync(CREDENTIALS_DIR, { recursive: true, mode: 0o700 });
+  } else {
+    try {
+      fs.chmodSync(CREDENTIALS_DIR, 0o700);
+    } catch {
+      // ignore — best effort
+    }
   }
   const creds: Credentials = {
     token,
@@ -54,8 +60,8 @@ export function isTokenExpired(token: string): boolean {
     const payload = JSON.parse(
       Buffer.from(parts[1], "base64url").toString("utf-8"),
     );
-    if (!payload.exp) return false; // no expiry = never expires
-    return Date.now() >= (payload.exp as number) * 1000;
+    if (typeof payload.exp !== "number") return true; // treat missing exp as expired
+    return Date.now() >= payload.exp * 1000;
   } catch {
     return true;
   }
@@ -81,7 +87,8 @@ export function getEmployerIdFromToken(): number {
     const employerId = payload.employerId ?? payload.id;
     if (!employerId) throw new Error("employerId not found in token payload.");
     return employerId as number;
-  } catch {
-    throw new Error("Could not decode employer ID from token.");
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`Could not decode employer ID from token: ${reason}`);
   }
 }

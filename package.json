@@ -1,8 +1,45 @@
 {
   "name": "hyring-mcp",
   "version": "1.0.0",
-  "description": "MCP servers for Hyring AI Screener — full suite + per-interview-type products + results-only product",
+  "description": "MCP server for the Hyring AI hiring platform — AI Video, Coding, EPT, Phone, Resume Screener, and Virtual Interview Platform.",
+  "mcpName": "io.github.hyring-com/hyring-mcp",
+  "license": "MIT",
+  "author": {
+    "name": "Hyring",
+    "email": "surya@hyring.com",
+    "url": "https://hyring.com"
+  },
+  "homepage": "https://github.com/Hyring-com/hyring-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hyring-com/hyring-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Hyring-com/hyring-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "hyring",
+    "recruitment",
+    "hiring",
+    "interview",
+    "ai-interviewer",
+    "resume-screener",
+    "phone-screener",
+    "ats"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "main": "dist/bin/full.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
   "bin": {
     "hyring-mcp": "dist/bin/full.js",
     "hyring-mcp-fixed": "dist/bin/fixed.js",
@@ -16,12 +53,16 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
     "start": "node dist/bin/full.js",
     "start:fixed": "node dist/bin/fixed.js",
     "start:dynamic": "node dist/bin/dynamic.js",
     "start:coding": "node dist/bin/coding.js",
     "start:verbal": "node dist/bin/verbal.js",
     "start:results": "node dist/bin/results.js",
+    "start:phone": "node dist/bin/phone.js",
+    "start:resume": "node dist/bin/resume.js",
+    "start:vip": "node dist/bin/vip.js",
     "dev": "ts-node src/bin/full.ts",
     "dev:fixed": "ts-node src/bin/fixed.ts",
     "dev:dynamic": "ts-node src/bin/dynamic.ts",
@@ -30,19 +71,14 @@
     "dev:results": "ts-node src/bin/results.ts",
     "dev:phone": "ts-node src/bin/phone.ts",
     "dev:resume": "ts-node src/bin/resume.ts",
-    "dev:vip": "ts-node src/bin/vip.ts",
-    "start:phone": "node dist/bin/phone.js",
-    "start:resume": "node dist/bin/resume.js",
-    "start:vip": "node dist/bin/vip.js"
+    "dev:vip": "ts-node src/bin/vip.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
     "axios": "^1.7.2",
-    "express": "^5.2.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
     "@types/node": "^20.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"

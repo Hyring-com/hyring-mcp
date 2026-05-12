@@ -64,11 +64,27 @@ export function authedTool(
       const msg = err instanceof Error ? err.message : String(err);
       return { content: [{ type: "text" as const, text: msg }] };
     }
-    return handler(args, extra);
+    try {
+      return await handler(args, extra);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: "text" as const, text: `Error: ${msg}` }],
+        isError: true,
+      };
+    }
   });
 }
 
 export async function startStdio(server: McpServer, label: string): Promise<void> {
+  process.on("unhandledRejection", (reason) => {
+    const msg = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+    process.stderr.write(`[${label}] Unhandled rejection: ${msg}\n`);
+  });
+  process.on("uncaughtException", (err) => {
+    process.stderr.write(`[${label}] Uncaught exception: ${err.stack ?? err.message}\n`);
+  });
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`[${label}] Server started on stdio\n`);
