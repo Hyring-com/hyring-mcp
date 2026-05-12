@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { requireAuth } from "./api/screener.client";
+import { getAnnotations } from "./tools/annotations";
 
 export const TONE_INSTRUCTIONS = `
 When presenting results from hyring-mcp tools to the user, follow this style:
@@ -57,23 +58,31 @@ export function authedTool(
   schema: any,
   handler: (args: any, extra: any) => Promise<any>,
 ): void {
-  server.tool(name, description, schema, async (args: any, extra: any) => {
-    try {
-      requireAuth();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { content: [{ type: "text" as const, text: msg }] };
-    }
-    try {
-      return await handler(args, extra);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: "text" as const, text: `Error: ${msg}` }],
-        isError: true,
-      };
-    }
-  });
+  server.registerTool(
+    name,
+    {
+      description,
+      inputSchema: schema,
+      annotations: getAnnotations(name),
+    },
+    async (args: any, extra: any) => {
+      try {
+        requireAuth();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text" as const, text: msg }] };
+      }
+      try {
+        return await handler(args, extra);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          isError: true,
+        };
+      }
+    },
+  );
 }
 
 export async function startStdio(server: McpServer, label: string): Promise<void> {

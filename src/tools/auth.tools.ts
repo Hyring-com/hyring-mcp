@@ -8,15 +8,19 @@ import {
   getCredentialsPath,
 } from "../auth/credentials";
 import { screenerClient, extractError } from "../api/screener.client";
+import { getAnnotations } from "./annotations";
 
 export function registerAuthTools(server: McpServer) {
 
   // ── request_otp ───────────────────────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "request_otp",
-    "Sends a sign-in OTP to the employer's email. Call this when the user wants to sign in or when requireAuth fails. After calling this, ask the user for the OTP code and call verify_otp.",
     {
-      email: z.string().email().describe("Employer's registered Hyring email address"),
+      description: "Sends a sign-in OTP to the employer's email. Call this when the user wants to sign in or when requireAuth fails. After calling this, ask the user for the OTP code and call verify_otp.",
+      inputSchema: {
+        email: z.string().email().describe("Employer's registered Hyring email address"),
+      },
+      annotations: getAnnotations("request_otp"),
     },
     async ({ email }) => {
       try {
@@ -39,12 +43,15 @@ export function registerAuthTools(server: McpServer) {
   );
 
   // ── verify_otp ────────────────────────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "verify_otp",
-    "Verifies the OTP code and signs the employer in. Saves the session token securely. Call this after the user shares the OTP from request_otp.",
     {
-      email: z.string().email().describe("Employer's email (same as used in request_otp)"),
-      otp:   z.string().describe("The OTP code received via email"),
+      description: "Verifies the OTP code and signs the employer in. Saves the session token securely. Call this after the user shares the OTP from request_otp.",
+      inputSchema: {
+        email: z.string().email().describe("Employer's email (same as used in request_otp)"),
+        otp:   z.string().describe("The OTP code received via email"),
+      },
+      annotations: getAnnotations("verify_otp"),
     },
     async ({ email, otp }) => {
       try {
@@ -91,10 +98,13 @@ export function registerAuthTools(server: McpServer) {
   );
 
   // ── whoami ────────────────────────────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "whoami",
-    "Returns the currently signed-in employer profile. Use this to check if the user is logged in before performing actions.",
-    {},
+    {
+      description: "Returns the currently signed-in employer profile. Use this to check if the user is logged in before performing actions.",
+      inputSchema: {},
+      annotations: getAnnotations("whoami"),
+    },
     async () => {
       try {
         const creds = loadCredentials();
@@ -138,10 +148,13 @@ export function registerAuthTools(server: McpServer) {
   );
 
   // ── logout ────────────────────────────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "logout",
-    "Signs out the current employer and removes the saved session.",
-    {},
+    {
+      description: "Signs out the current employer and removes the saved session.",
+      inputSchema: {},
+      annotations: getAnnotations("logout"),
+    },
     async () => {
       const creds = loadCredentials();
       if (!creds) {
@@ -158,10 +171,13 @@ export function registerAuthTools(server: McpServer) {
   );
 
   // ── token_status ──────────────────────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     "token_status",
-    "Checks the current session status — whether signed in, expired, or not logged in.",
-    {},
+    {
+      description: "Checks the current session status — whether signed in, expired, or not logged in.",
+      inputSchema: {},
+      annotations: getAnnotations("token_status"),
+    },
     async () => {
       const creds = loadCredentials();
 
