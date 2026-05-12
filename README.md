@@ -124,23 +124,6 @@ Tool names follow `<verb>_<noun>` (e.g., `list_candidates`, `get_coding_report`,
 - Node.js **18+**
 - A Hyring employer account ([sign up](https://hyring.com))
 
-## Local development
-
-```bash
-git clone https://github.com/Hyring-com/hyring-mcp.git
-cd hyring-mcp
-npm install
-npm run build
-npm start          # runs the full server on stdio
-```
-
-For development against TypeScript sources:
-
-```bash
-npm run dev        # full suite
-npm run dev:phone  # phone screener only
-```
-
 ## Security
 
 - Credentials are stored locally at `~/.hyring/credentials.json` with `chmod 600`.
