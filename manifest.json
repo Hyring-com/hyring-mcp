@@ -1,7 +1,7 @@
 {
   "dxt_version": "0.2",
   "name": "hyring-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "display_name": "Hyring",
   "description": "Hyring AI hiring suite — AI Video Interviewer (One-Way & Two-Way), AI Coding Interviewer, English Proficiency Test, AI Phone Screener, AI Resume Screener, Virtual Interview Platform.",
   "icon": "icon.png",

@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.hyring-com/hyring-mcp",
   "description": "MCP server for the Hyring AI hiring platform. Build assessments, invite candidates, and review reports across AI Video Interviewer (One-Way & Two-Way), AI Coding Interviewer, English Proficiency Test, AI Phone Screener, AI Resume Screener, and Virtual Interview Platform.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "repository": {
     "url": "https://github.com/Hyring-com/hyring-mcp",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "npm",
       "identifier": "hyring-mcp",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "transport": {
         "type": "stdio"
       }

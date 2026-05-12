@@ -1,6 +1,6 @@
 {
   "name": "hyring-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server for the Hyring AI hiring platform — AI Video, Coding, EPT, Phone, Resume Screener, and Virtual Interview Platform.",
   "mcpName": "io.github.hyring-com/hyring-mcp",
   "license": "MIT",
